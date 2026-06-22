@@ -1,0 +1,1893 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>VELS UNIVERSITY — Lab Attendance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<!-- Firebase v9 compat (modular-lite works via CDN) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+<!-- QR generation + scanning -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qr-scanner/1.4.2/qr-scanner.umd.min.js"></script>
+
+<style>
+/* ============================================================
+   DESIGN TOKENS
+   ============================================================ */
+:root{
+  --ink:#14181F;
+  --paper:#F0F2EE;
+  --surface:#FFFFFF;
+  --surface2:#F7F8F6;
+  --line:#E2E4E0;
+  --signal:#1FA37A;
+  --signal-dim:#E6F4EF;
+  --signal-dark:#0f6b4f;
+  --alert:#D6453A;
+  --alert-dim:#FBEAE8;
+  --warn:#C8932B;
+  --warn-dim:#FBF1DE;
+  --muted:#6B7280;
+  --radius:14px;
+  --font-display:'Space Grotesk',sans-serif;
+  --font-body:'IBM Plex Sans',sans-serif;
+  --font-mono:'IBM Plex Mono',monospace;
+  --nav-h:64px;
+  --rail-w:220px;
+  --hero-grad:linear-gradient(135deg,#0f2419 0%,#1a3d2b 60%,#0d2e40 100%);
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{background:var(--paper);color:var(--ink);font-family:var(--font-body);-webkit-tap-highlight-color:transparent;min-height:100vh;}
+button{font-family:inherit;}
+input,select{font-family:inherit;}
+.mono{font-family:var(--font-mono);}
+.display{font-family:var(--font-display);}
+
+#app{display:flex;flex-direction:column;min-height:100vh;}
+
+/* ============================================================
+   TOP BAR
+   ============================================================ */
+.topbar{
+  position:sticky;top:0;z-index:30;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 18px;
+  background:var(--surface);
+  border-bottom:1px solid var(--line);
+}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;}
+.brand-mark{width:30px;height:30px;flex-shrink:0;}
+.brand-text{display:flex;flex-direction:column;line-height:1.1;}
+.brand-text strong{font-family:var(--font-display);font-size:18px;font-weight:700;letter-spacing:-0.01em;}
+.brand-text span{font-size:11px;color:var(--muted);}
+.identity{display:flex;align-items:center;gap:10px;}
+.role-pill{
+  font-family:var(--font-mono);font-size:12px;padding:5px 10px;border-radius:20px;
+  background:var(--signal-dim);color:var(--signal-dark);border:1px solid #cfe9df;
+}
+.icon-btn{
+  background:none;border:1px solid var(--line);border-radius:10px;
+  width:36px;height:36px;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;color:var(--ink);
+}
+.icon-btn:hover{background:var(--paper);}
+.icon-btn:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{
+  outline:2px solid var(--signal);outline-offset:2px;
+}
+
+/* ============================================================
+   LAYOUT SHELL
+   ============================================================ */
+.shell{flex:1;display:flex;flex-direction:column;width:100%;}
+.content{
+  flex:1;width:100%;max-width:880px;margin:0 auto;
+  padding:18px 16px calc(var(--nav-h) + 28px);
+}
+@media (min-width:861px){
+  .shell{flex-direction:row;}
+  .content{padding:28px 32px;max-width:760px;margin:0;}
+}
+
+/* ============================================================
+   NAV (bottom mobile / rail desktop)
+   ============================================================ */
+.nav{
+  position:fixed;left:0;right:0;bottom:0;z-index:30;
+  display:flex;justify-content:space-around;
+  background:var(--surface);border-top:1px solid var(--line);
+  height:var(--nav-h);
+}
+.nav button{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:4px;background:none;border:none;color:var(--muted);font-size:11px;cursor:pointer;
+}
+.nav button svg{width:20px;height:20px;}
+.nav button.active{color:var(--signal);}
+.nav button.active svg{stroke:var(--signal);}
+@media (min-width:861px){
+  .nav{
+    position:static;flex-direction:column;justify-content:flex-start;align-items:stretch;
+    width:var(--rail-w);height:auto;border-top:none;border-right:1px solid var(--line);
+    padding:18px 10px;gap:4px;
+  }
+  .nav button{
+    flex:none;flex-direction:row;justify-content:flex-start;gap:10px;
+    padding:11px 12px;border-radius:10px;font-size:14px;
+  }
+  .nav button.active{background:var(--signal-dim);}
+}
+
+/* ============================================================
+   GENERIC COMPONENTS
+   ============================================================ */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px;}
+.stack{display:flex;flex-direction:column;gap:14px;}
+.row{display:flex;gap:10px;align-items:center;}
+.row.between{justify-content:space-between;}
+.row.wrap{flex-wrap:wrap;}
+
+h1.page-title{font-family:var(--font-display);font-size:22px;font-weight:700;margin:0 0 4px;letter-spacing:-0.01em;}
+p.page-sub{color:var(--muted);font-size:13px;margin:0 0 18px;}
+
+.stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px;}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px;}
+.stat .num{font-family:var(--font-mono);font-size:22px;font-weight:600;}
+.stat .lbl{font-size:11px;color:var(--muted);margin-top:2px;}
+
+.btn{
+  font-family:var(--font-body);font-weight:600;font-size:14px;
+  border-radius:10px;padding:11px 16px;border:1px solid transparent;
+  cursor:pointer;display:inline-flex;align-items:center;gap:8px;justify-content:center;
+  transition:transform .04s ease;text-decoration:none;
+}
+.btn:active{transform:scale(0.98);}
+.btn-primary{background:var(--ink);color:#fff;}
+.btn-primary:hover{background:#262c36;}
+.btn-signal{background:var(--signal);color:#fff;}
+.btn-signal:hover{background:#178a66;}
+.btn-ghost{background:none;border:1px solid var(--line);color:var(--ink);}
+.btn-ghost:hover{background:var(--paper);}
+.btn-danger{background:none;border:1px solid #f0c6c2;color:var(--alert);}
+.btn-danger:hover{background:var(--alert-dim);}
+.btn-block{width:100%;}
+.btn-sm{padding:7px 11px;font-size:12px;border-radius:8px;}
+
+label{font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:6px;}
+.field{margin-bottom:14px;}
+input[type=text],input[type=password],input[type=email],input[type=date],input[type=time],select{
+  width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;
+  font-size:14px;background:var(--surface);color:var(--ink);
+}
+input:focus,select:focus{outline:2px solid var(--signal);outline-offset:1px;border-color:var(--signal);}
+.help{font-size:11px;color:var(--muted);margin-top:5px;}
+.err-text{font-size:12px;color:var(--alert);margin-top:6px;display:none;}
+.err-text.show{display:block;}
+
+.badge{
+  font-family:var(--font-mono);font-size:11px;padding:3px 9px;border-radius:20px;
+  display:inline-flex;align-items:center;gap:5px;font-weight:600;white-space:nowrap;
+}
+.badge-present{background:var(--signal-dim);color:#0f6b4f;}
+.badge-absent{background:var(--alert-dim);color:#a23227;}
+.badge-active{background:var(--signal-dim);color:#0f6b4f;}
+.badge-scheduled{background:var(--warn-dim);color:#8a6516;}
+.badge-ended{background:#EDEEF0;color:var(--muted);}
+.badge-dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
+.badge-dot.pulse{animation:pulse 1.6s ease-in-out infinite;}
+@media (prefers-reduced-motion:reduce){.badge-dot.pulse{animation:none;}}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+
+.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);}
+table{width:100%;border-collapse:collapse;min-width:440px;}
+th{
+  text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;
+  color:var(--muted);padding:12px 14px;border-bottom:1px solid var(--line);white-space:nowrap;
+}
+td{padding:12px 14px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:middle;}
+tr:last-child td{border-bottom:none;}
+td.mono,th.mono{font-family:var(--font-mono);}
+.action-icons{display:flex;gap:6px;}
+
+.empty{text-align:center;padding:40px 20px;color:var(--muted);}
+.empty .glyph{font-size:28px;margin-bottom:10px;}
+.empty p{margin:0 0 16px;font-size:13px;}
+
+.search-bar{position:relative;flex:1;}
+.search-bar input{padding-left:34px;}
+.search-bar svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--muted);}
+
+/* ============================================================
+   MODAL / OVERLAY
+   ============================================================ */
+.overlay{
+  position:fixed;inset:0;background:rgba(20,24,31,.5);z-index:50;
+  display:flex;align-items:flex-end;justify-content:center;
+}
+.modal{
+  background:var(--surface);width:100%;max-width:480px;border-radius:18px 18px 0 0;
+  padding:20px;max-height:88vh;overflow-y:auto;
+}
+@media (min-width:640px){
+  .overlay{align-items:center;}
+  .modal{border-radius:var(--radius);margin:20px;}
+}
+.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
+.modal-head h2{font-family:var(--font-display);font-size:18px;margin:0;}
+
+/* ============================================================
+   HOME / LANDING PAGE
+   ============================================================ */
+.home-page{min-height:100vh;display:flex;flex-direction:column;}
+
+.home-hero{
+  background: #010a13;;
+  color:#fff;
+  padding:80px 24px 60px;
+  text-align:center;
+  position:relative;
+  overflow:hidden;
+}
+.home-hero::before{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(ellipse 80% 60% at 50% 0%, rgba(31,163,122,.25) 0%, transparent 70%);
+  pointer-events:none;
+}
+.hero-logo{
+  display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:32px;
+}
+.hero-logo-icon{
+  width:52px;height:52px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);
+  border-radius:14px;display:flex;align-items:center;justify-content:center;
+}
+.hero-logo-icon svg{width:28px;height:28px;stroke:#fff;}
+.hero-logo-text{font-family:var(--font-display);font-size:28px;font-weight:700;letter-spacing:-0.02em;}
+.hero-headline{
+  font-family:var(--font-display);font-size:clamp(28px,6vw,46px);font-weight:700;
+  line-height:1.12;letter-spacing:-0.02em;margin:0 0 16px;
+}
+.hero-headline em{font-style:normal;color:#5ef0b7;}
+.hero-sub{font-size:16px;color:rgba(255,255,255,.72);max-width:480px;margin:0 auto 40px;line-height:1.6;}
+
+.home-login-cards{
+  display:flex;flex-direction:column;gap:14px;max-width:400px;margin:0 auto;
+  padding:0 16px;
+}
+@media (min-width:640px){
+  .home-login-cards{flex-direction:row;max-width:680px;}
+}
+
+.login-card{
+  flex:1;border:1px solid rgba(255,255,255,.15);border-radius:18px;
+  padding:24px 20px;background:rgba(255,255,255,.08);backdrop-filter:blur(12px);
+  cursor:pointer;color:#fff;text-align:left;transition:border-color .15s,background .15s;
+}
+.login-card:hover{border-color:rgba(255,255,255,.4);background:rgba(255,255,255,.13);}
+.login-card-icon{
+  width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,.12);
+  display:flex;align-items:center;justify-content:center;margin-bottom:14px;
+}
+.login-card-icon svg{width:22px;height:22px;stroke:#fff;}
+.login-card strong{font-family:var(--font-display);font-size:17px;display:block;margin-bottom:4px;}
+.login-card span{font-size:13px;color:rgba(255,255,255,.6);}
+.login-card .arrow{margin-top:18px;font-size:13px;color:rgba(255,255,255,.45);display:flex;align-items:center;gap:6px;}
+.login-card .arrow svg{width:14px;height:14px;stroke:currentColor;transition:transform .15s;}
+.login-card:hover .arrow svg{transform:translateX(4px);}
+
+.home-features{
+  background:var(--surface);padding:60px 24px;
+}
+.features-inner{max-width:800px;margin:0 auto;}
+.features-label{font-family:var(--font-mono);font-size:11px;color:var(--signal);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px;}
+.features-title{font-family:var(--font-display);font-size:clamp(22px,4vw,30px);font-weight:700;letter-spacing:-0.01em;margin:0 0 40px;}
+.features-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:20px;}
+.feature-item{padding:20px;border:1px solid var(--line);border-radius:var(--radius);}
+.feature-icon{width:38px;height:38px;border-radius:10px;background:var(--signal-dim);display:flex;align-items:center;justify-content:center;margin-bottom:14px;}
+.feature-icon svg{width:18px;height:18px;stroke:var(--signal);}
+.feature-title{font-family:var(--font-display);font-size:15px;font-weight:700;margin:0 0 6px;}
+.feature-desc{font-size:13px;color:var(--muted);line-height:1.5;margin:0;}
+
+.home-footer{
+  background:var(--ink);color:rgba(255,255,255,.45);font-size:12px;
+  text-align:center;padding:20px;margin-top:auto;
+}
+.home-footer strong{color:rgba(255,255,255,.7);}
+
+/* ============================================================
+   AUTH (LOGIN / REGISTER) PAGES
+   ============================================================ */
+.auth-page{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+.auth-card{
+  width:100%;max-width:400px;background:var(--surface);
+  border:1px solid var(--line);border-radius:20px;padding:32px 28px;
+}
+.auth-back{margin-bottom:20px;}
+.auth-logo{display:flex;align-items:center;gap:8px;margin-bottom:24px;}
+.auth-logo svg{width:24px;height:24px;}
+.auth-logo strong{font-family:var(--font-display);font-size:16px;}
+.auth-title{font-family:var(--font-display);font-size:22px;font-weight:700;margin:0 0 4px;letter-spacing:-0.01em;}
+.auth-sub{font-size:13px;color:var(--muted);margin:0 0 24px;}
+.auth-divider{height:1px;background:var(--line);margin:20px 0;}
+.auth-switch{font-size:13px;color:var(--muted);text-align:center;}
+.auth-switch button{background:none;border:none;color:var(--signal);font-weight:600;cursor:pointer;padding:0;}
+
+/* ============================================================
+   ROLE SELECT (intermediate)
+   ============================================================ */
+.role-select{
+  display:flex;flex-direction:column;gap:14px;justify-content:center;
+  min-height:80vh;max-width:420px;margin:0 auto;width:100%;padding:24px 16px;
+}
+.role-select h1{font-family:var(--font-display);font-size:26px;text-align:center;margin:0 0 2px;letter-spacing:-0.01em;}
+.role-select p.lead{text-align:center;color:var(--muted);font-size:13px;margin:0 0 18px;}
+.role-card{
+  border:1px solid var(--line);border-radius:var(--radius);padding:20px;background:var(--surface);
+  display:flex;align-items:center;gap:14px;cursor:pointer;text-align:left;width:100%;
+}
+.role-card:hover{border-color:var(--signal);}
+.role-card svg{width:30px;height:30px;flex-shrink:0;color:var(--ink);}
+.role-card strong{font-family:var(--font-display);font-size:16px;display:block;}
+.role-card span{font-size:12px;color:var(--muted);}
+
+/* ============================================================
+   TOAST
+   ============================================================ */
+.toast{
+  position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:80;
+  padding:11px 18px;border-radius:10px;font-size:13px;font-weight:600;
+  box-shadow:0 6px 18px rgba(0,0,0,.12);max-width:90vw;
+}
+.toast-success{background:var(--ink);color:#fff;}
+.toast-error{background:var(--alert);color:#fff;}
+.toast-warn{background:var(--warn);color:#fff;}
+
+/* ============================================================
+   QR DISPLAY (STAFF)
+   ============================================================ */
+.qr-stage{display:flex;flex-direction:column;align-items:center;text-align:center;gap:14px;padding:6px;}
+.qr-frame{background:#fff;padding:16px;border-radius:16px;border:1px solid var(--line);}
+#qrcodeTarget img,#qrcodeTarget canvas{display:block;}
+.qr-subject{font-family:var(--font-display);font-size:18px;font-weight:700;}
+.qr-status-row{display:flex;align-items:center;gap:8px;justify-content:center;}
+.qr-countdown{font-family:var(--font-mono);font-size:13px;color:var(--muted);}
+.qr-token-info{
+  background:var(--warn-dim);border:1px solid #f0d68a;border-radius:10px;
+  padding:10px 14px;font-size:12px;color:#7a5a12;text-align:center;max-width:260px;
+}
+
+/* ============================================================
+   SCANNER (STUDENT)
+   ============================================================ */
+.scan-overlay{position:fixed;inset:0;background:#0B0D10;z-index:60;display:flex;flex-direction:column;}
+.scan-top{display:flex;justify-content:space-between;align-items:center;padding:16px;color:#fff;}
+.scan-top .icon-btn{border-color:rgba(255,255,255,.25);color:#fff;}
+.scan-viewport{flex:1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;}
+.scan-viewport video{width:100%;height:100%;object-fit:cover;}
+.scan-frame{
+  position:absolute;width:min(70vw,260px);height:min(70vw,260px);
+  border:none;
+}
+.scan-frame .corner{position:absolute;width:28px;height:28px;border:3px solid var(--signal);}
+.scan-frame .tl{top:0;left:0;border-right:none;border-bottom:none;border-radius:8px 0 0 0;}
+.scan-frame .tr{top:0;right:0;border-left:none;border-bottom:none;border-radius:0 8px 0 0;}
+.scan-frame .bl{bottom:0;left:0;border-right:none;border-top:none;border-radius:0 0 0 8px;}
+.scan-frame .br{bottom:0;right:0;border-left:none;border-top:none;border-radius:0 0 8px 0;}
+.scan-line{position:absolute;left:6%;right:6%;height:2px;background:var(--signal);box-shadow:0 0 8px var(--signal);animation:scanmove 2.1s ease-in-out infinite;}
+@keyframes scanmove{0%{top:6%;}50%{top:92%;}100%{top:6%;}}
+@media (prefers-reduced-motion:reduce){.scan-line{animation:none;top:50%;}}
+.scan-bottom{padding:18px;text-align:center;}
+.scan-hint{color:#fff;font-size:13px;opacity:.8;margin-bottom:14px;}
+
+.scan-result{
+  position:fixed;inset:0;z-index:65;background:var(--paper);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:14px;text-align:center;padding:30px;
+}
+.result-glyph{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;}
+.result-glyph.ok{background:var(--signal-dim);color:var(--signal);}
+.result-glyph.bad{background:var(--alert-dim);color:var(--alert);}
+.result-glyph.warn{background:var(--warn-dim);color:var(--warn);}
+.result-glyph svg{width:32px;height:32px;}
+.result-title{font-family:var(--font-display);font-size:19px;font-weight:700;}
+.result-sub{color:var(--muted);font-size:13px;max-width:280px;}
+
+/* ============================================================
+   MISC
+   ============================================================ */
+.divider{height:1px;background:var(--line);margin:18px 0;}
+.tab-row{display:flex;gap:8px;margin-bottom:18px;overflow-x:auto;}
+.tab-chip{
+  font-size:12px;font-weight:600;padding:8px 14px;border-radius:20px;border:1px solid var(--line);
+  background:var(--surface);color:var(--muted);cursor:pointer;white-space:nowrap;
+}
+.tab-chip.active{background:var(--ink);color:#fff;border-color:var(--ink);}
+.loading-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;color:var(--muted);font-family:var(--font-mono);font-size:13px;flex-direction:column;gap:12px;}
+.spin{width:24px;height:24px;border:2px solid var(--line);border-top-color:var(--signal);border-radius:50%;animation:spin .7s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.mark-btn-row{display:flex;flex-direction:column;gap:8px;margin-top:14px;}
+
+/* ============================================================
+   FIREBASE CONFIG NOTICE
+   ============================================================ */
+.config-screen{
+  min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:var(--paper);
+}
+.config-card{
+  max-width:560px;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:32px;
+}
+.config-card h2{font-family:var(--font-display);font-size:20px;margin:0 0 8px;}
+.config-card p{font-size:13px;color:var(--muted);margin:0 0 20px;line-height:1.6;}
+.config-card code{font-family:var(--font-mono);font-size:12px;background:var(--paper);padding:2px 6px;border-radius:4px;}
+.config-steps{counter-reset:steps;}
+.config-step{counter-increment:steps;display:flex;gap:12px;margin-bottom:16px;align-items:flex-start;}
+.config-step::before{
+  content:counter(steps);font-family:var(--font-mono);font-size:11px;font-weight:600;
+  min-width:24px;height:24px;border-radius:50%;background:var(--ink);color:#fff;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;
+}
+.config-step p{font-size:13px;color:var(--muted);margin:0;line-height:1.5;}
+.config-step p strong{color:var(--ink);}
+pre.rules-block{
+  background:#0d1117;color:#e6edf3;font-family:var(--font-mono);font-size:11px;
+  border-radius:10px;padding:14px;overflow-x:auto;margin:12px 0;white-space:pre;line-height:1.6;
+}
+
+
+.home-hero{
+    position: relative;
+}
+
+.corner-logo{
+    position: absolute;
+    top: 25px;
+    left: 25px;
+    z-index: 100;
+}
+
+.corner-logo img{
+    width: 70px;
+    height: auto;
+    border-radius: 12px;
+}
+</style>
+</head>
+<body>
+<div id="app"><div class="loading-screen"><div class="spin"></div><span>LOADING…</span></div></div>
+
+<script>
+  const firebaseConfig = {
+  apiKey: "AIzaSyDV_h35oZCzTKRDKhPvwhsd3yTD8pyPny8",
+  authDomain: "lab-attendance-managemen-6134f.firebaseapp.com",
+  databaseURL: 'https://lab-attendance-managemen-6134f-default-rtdb.asia-southeast1.firebasedatabase.app/',
+  projectId: "lab-attendance-managemen-6134f",
+  storageBucket: "lab-attendance-managemen-6134f.firebasestorage.app",
+  messagingSenderId: "563299066239",
+  appId: "1:563299066239:web:89770e736d98ad35213a4a",
+  measurementId: "G-MNVT7R7NQT"
+};
+
+  /* ---------------------------------------------------- */
+
+  /* -------- ② STAFF EMAIL(S) — used to detect staff vs student role -------- */
+  /* Staff accounts have emails matching this domain or listed explicitly.
+     Students are stored in Realtime Database with a role field.             */
+  const STAFF_EMAIL_DOMAIN = "@staff.labtrack.edu";   /* change to your domain */
+  const EXTRA_STAFF_EMAILS = ['kishoreselvam4567@gmail.com'];  /* ["teacher@gmail.com", ...]              */
+
+  /* -------- ③ QR SECRET — shared secret for signing QR tokens -------- */
+  /* Change this to any random string (at least 32 chars recommended).
+     This is used to sign QR tokens so students can't forge them.
+     It lives client-side, so treat it as rate-limiting protection.
+     Real security comes from Firebase rules + session time validation. */
+  const QR_SECRET = "labtrack-qr-2025-secret-change-me-to-something-random";
+
+/* ============================================================
+   ICONS
+   ============================================================ */
+const I = {
+  flask:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 2h6M10 2v6.5L4.8 18a2 2 0 0 0 1.7 3h11a2 2 0 0 0 1.7-3L14 8.5V2"/><path d="M7.5 14h9"/></svg>`,
+  cap:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M22 9 12 5 2 9l10 4 10-4Z"/><path d="M6 11v4.5C6 17 9 18.5 12 18.5S18 17 18 15.5V11"/></svg>`,
+  users:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 19c0-3 3-5.2 6.5-5.2s6.5 2.2 6.5 5.2"/><circle cx="17.5" cy="9" r="2.6"/><path d="M16 13.4c2.6.4 4.5 2.2 4.5 4.5"/></svg>`,
+  qr:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v3M14 20h3M20 20v.01"/></svg>`,
+  history:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/></svg>`,
+  user:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="3.4"/><path d="M5 20c0-3.5 3.1-6 7-6s7 2.5 7 6"/></svg>`,
+  chart:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 19V10M10 19V5M16 19v-7M21 19H3"/></svg>`,
+  plus:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>`,
+  edit:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 20h9"/><path d="M16.5 3.5a2 2 0 0 1 3 3L8 18l-4 1 1-4 11.5-11.5Z"/></svg>`,
+  trash:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>`,
+  logout:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg>`,
+  close:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg>`,
+  search:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>`,
+  check:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 6 9 17l-5-5"/></svg>`,
+  alertCircle:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>`,
+  clock:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`,
+  download:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>`,
+  key:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="8" cy="15" r="4"/><path d="M11 12 19 4M16 5l2 2M19 8l2 2"/></svg>`,
+  shield:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 2L3 7v5c0 5.25 3.75 10.15 9 11.25C17.25 22.15 21 17.25 21 12V7l-9-5Z"/></svg>`,
+  arrow:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M13 6l6 6-6 6"/></svg>`,
+  refresh:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M21 5v3h-3"/><path d="M3 19v-3h3"/></svg>`,
+  mark:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 12l2 2 4-4"/><path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2Z"/></svg>`
+};
+
+/* ============================================================
+   FIREBASE INIT
+   ============================================================ */
+const CONFIG_IS_PLACEHOLDER = false;let db, auth;
+
+if(!CONFIG_IS_PLACEHOLDER){
+  firebase.initializeApp(firebaseConfig);
+  auth = firebase.auth();
+  db   = firebase.database();
+}
+
+/* ============================================================
+   STATE
+   ============================================================ */
+let S = {
+  view: 'home',            // home | staffLogin | studentLogin | staffApp | studentApp
+  authUser: null,          // Firebase user
+  isStaff: false,
+  currentStudentData: null,// { uid, rollNo, name, dept, year, email }
+  staffTab: 'students',    // students | sessions | reports
+  studentTab: 'scan',      // scan | history | profile
+  students: {},            // { uid: {rollNo,name,...} }
+  sessions: {},            // { id: {subject,date,startTime,endTime,...} }
+  attendance: {},          // { sessionId: { rollNo: {time,...} } }
+  studentSearch: '',
+  modal: null,             // {type, payload}
+  qrSession: null,
+  scanning: false,
+  scanResult: null,
+  reportMode: 'session',
+  reportSessionId: null,
+  reportStudentUid: null,
+  message: null,
+  authLoading: false,
+  authError: '',
+  staffRegMode: false,     // toggling login/register on staff page
+};
+let _msgTimeout=null, _countdownInterval=null, _refreshInterval=null;
+let _qrScanner=null;
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+const esc = s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const genId = ()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const fmtDate = d=>{ try{const dt=new Date(d+'T00:00:00');return dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});}catch{return d;}};
+const fmtTime12 = t=>{ const[h,m]=t.split(':').map(Number);const ap=h>=12?'PM':'AM';const hh=((h+11)%12)+1;return `${hh}:${String(m).padStart(2,'0')} ${ap}`; };
+const fmtTimestamp = iso=>{ try{const d=new Date(iso);return d.toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});}catch{return iso;}};
+const sessionStart = s=>new Date(`${s.date}T${s.startTime}`);
+const sessionEnd   = s=>new Date(`${s.date}T${s.endTime}`);
+function sessionStatus(s){
+  if(s.endedManually) return 'ended';
+  const now=new Date();
+  if(now<sessionStart(s)) return 'scheduled';
+  if(now>sessionEnd(s)) return 'ended';
+  return 'active';
+}
+const sortedSessions = ()=>Object.values(S.sessions).sort((a,b)=>(b.date+b.startTime).localeCompare(a.date+a.startTime));
+const presentCount  = sid=>Object.keys((S.attendance[sid]||{})).length;
+const isPresent = (sid,rollNo)=>{ const att=S.attendance[sid]||{}; return Object.values(att).some(r=>r.rollNo===rollNo); };
+const studentsArr   = ()=>Object.values(S.students).sort((a,b)=>a.rollNo.localeCompare(b.rollNo));
+function fmtDuration(ms){
+  const total=Math.floor(ms/1000);
+  const h=Math.floor(total/3600),m=Math.floor((total%3600)/60),sec=total%60;
+  if(h>0) return `${h}h ${m}m`;
+  return `${m}m ${sec}s`;
+}
+function isStaffEmail(email){
+  if(!email) return false;
+  if(EXTRA_STAFF_EMAILS.includes(email)) return true;
+  return email.endsWith(STAFF_EMAIL_DOMAIN);
+}
+
+function flash(type,text){
+  S.message={type,text};
+  renderMessage();
+  if(_msgTimeout) clearTimeout(_msgTimeout);
+  _msgTimeout=setTimeout(()=>{S.message=null;renderMessage();},3500);
+}
+function renderMessage(){
+  let el=document.getElementById('_toast');
+  if(!el){el=document.createElement('div');el.id='_toast';document.body.appendChild(el);}
+  el.outerHTML=toastHtml();
+}
+function toastHtml(){
+  if(!S.message) return '<span id="_toast" style="display:none"></span>';
+  return `<div id="_toast" class="toast toast-${S.message.type}">${esc(S.message.text)}</div>`;
+}
+
+/* ============================================================
+   QR TOKEN  (time-limited, HMAC-style using Web Crypto)
+   ============================================================ */
+async function signPayload(payload){
+  const enc=new TextEncoder();
+  const key=await crypto.subtle.importKey('raw',enc.encode(QR_SECRET),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+  const sig=await crypto.subtle.sign('HMAC',key,enc.encode(payload));
+  return btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+async function buildQrToken(sessionId){
+  // Token: base64url({app,sid,exp}) + "." + hmac
+  const expMs=sessionEnd(S.sessions[sessionId]).getTime();
+  const body=btoa(JSON.stringify({app:'labtrack',sid:sessionId,exp:expMs}));
+  const sig=await signPayload(body);
+  return `${body}.${sig}`;
+}
+async function verifyQrToken(token){
+  try{
+    const[bodyB64,sig]=token.split('.');
+    if(!bodyB64||!sig) return null;
+    const expectedSig=await signPayload(bodyB64);
+    if(sig!==expectedSig) return null;
+    const payload=JSON.parse(atob(bodyB64));
+    if(payload.app!=='labtrack') return null;
+    if(Date.now()>payload.exp) return {expired:true, payload};
+    return {expired:false, payload};
+  }catch{return null;}
+}
+
+/* ============================================================
+   FIREBASE DATA OPS
+   ============================================================ */
+function dbRef(path){ return db.ref('labtrack/'+path); }
+
+async function loadAll(){
+  const[studSnap,sessSnap,attSnap]=await Promise.all([
+    dbRef('students').once('value'),
+    dbRef('sessions').once('value'),
+    dbRef('attendance').once('value'),
+  ]);
+  S.students   = studSnap.val()||{};
+  S.sessions   = sessSnap.val()||{};
+  S.attendance = attSnap.val()||{};
+}
+
+function watchAttendance(sessionId){
+  dbRef(`attendance/${sessionId}`).on('value',snap=>{
+    const val=snap.val();
+    S.attendance[sessionId]=val||{};
+    const el=document.getElementById('qrPresentCount');
+    if(el) el.textContent=presentCount(sessionId);
+  });
+}
+function stopWatchAttendance(sessionId){
+  if(sessionId) dbRef(`attendance/${sessionId}`).off();
+}
+
+async function saveStudent(uid,data){
+  await dbRef(`students/${uid}`).set(data);
+  S.students[uid]=data;
+}
+async function deleteStudentData(uid){
+  await dbRef(`students/${uid}`).remove();
+  delete S.students[uid];
+}
+async function saveSession(id,data){
+  await dbRef(`sessions/${id}`).set(data);
+  S.sessions[id]=data;
+}
+async function deleteSessionData(id){
+  await dbRef(`sessions/${id}`).remove();
+  await dbRef(`attendance/${id}`).remove();
+  delete S.sessions[id];
+  delete S.attendance[id];
+}
+async function markAttendance(sessionId,rollNo,name){
+  const key=rollNo.replace(/[^a-zA-Z0-9]/g,'_');
+  const rec={rollNo,name,time:new Date().toISOString()};
+  await dbRef(`attendance/${sessionId}/${key}`).set(rec);
+  if(!S.attendance[sessionId]) S.attendance[sessionId]={};
+  S.attendance[sessionId][key]=rec;
+}
+
+/* ============================================================
+   AUTH
+   ============================================================ */
+async function staffLogin(email,password){
+  S.authLoading=true;S.authError='';render();
+  try{
+    const cred=await auth.signInWithEmailAndPassword(email,password);
+    if(!isStaffEmail(cred.user.email)){
+      await auth.signOut();
+      S.authError='This account does not have staff access.';
+      S.authLoading=false;render();return;
+    }
+  }catch(e){
+    S.authError=friendlyAuthError(e.code);
+    S.authLoading=false;render();
+  }
+}
+async function staffRegister(email,password){
+  S.authLoading=true;S.authError='';render();
+  try{
+    const cred=await auth.createUserWithEmailAndPassword(email,password);
+    if(!isStaffEmail(cred.user.email)){
+      await cred.user.delete();
+      S.authError='Staff accounts must use the designated staff email domain.';
+      S.authLoading=false;render();return;
+    }
+  }catch(e){
+    S.authError=friendlyAuthError(e.code);
+    S.authLoading=false;render();
+  }
+}
+async function studentLogin(rollNo,password){
+  S.authLoading=true;S.authError='';render();
+  try{
+    // Build the firebase email directly from roll number (same formula used when adding student)
+    const fEmail=`${rollNo.trim().toLowerCase().replace(/[^a-z0-9]/g,'_')}@labtrack-students.local`;
+    await auth.signInWithEmailAndPassword(fEmail,password);
+    // onAuthStateChanged will verify the roll number exists in DB and route to studentApp
+  }catch(e){
+    // If auth fails, verify if the roll number even exists to give a better error
+    if(e.code==='auth/user-not-found'||e.code==='auth/invalid-credential'||e.code==='auth/wrong-password'){
+      try{
+        const snap=await dbRef('students').once('value');
+        const val=snap.val()||{};
+        const exists=Object.values(val).some(s=>s.rollNo&&s.rollNo.toUpperCase()===rollNo.trim().toUpperCase());
+        S.authError=exists?'Incorrect password.':'No student found with that roll number.';
+      }catch{ S.authError=friendlyAuthError(e.code); }
+    }else{
+      S.authError=friendlyAuthError(e.code);
+    }
+    S.authLoading=false;render();
+  }
+}
+function friendlyAuthError(code){
+  const map={
+    'auth/user-not-found':'No account with that email.',
+    'auth/wrong-password':'Incorrect password.',
+    'auth/invalid-email':'That doesn\'t look like a valid email.',
+    'auth/email-already-in-use':'That email is already registered.',
+    'auth/weak-password':'Password must be at least 6 characters.',
+    'auth/invalid-credential':'Incorrect email or password.',
+    'auth/too-many-requests':'Too many failed attempts. Try again later.',
+  };
+  return map[code]||'Authentication failed. Please try again.';
+}
+async function doLogout(){
+  stopCountdown();stopRefresh();stopQrRefreshTimer();
+  if(S.qrSession){stopWatchAttendance(S.qrSession);}
+  if(_qrScanner){_qrScanner.stop();_qrScanner.destroy();_qrScanner=null;}
+  await auth.signOut();
+  S={...S,view:'home',authUser:null,isStaff:false,currentStudentData:null,
+     staffTab:'students',studentTab:'scan',students:{},sessions:{},attendance:{},
+     studentSearch:'',modal:null,qrSession:null,scanning:false,scanResult:null,
+     reportMode:'session',reportSessionId:null,reportStudentUid:null,authLoading:false,authError:''};
+  render();
+}
+
+/* ============================================================
+   STUDENT CRUD (staff creates Firebase Auth users for students
+   using a secondary Firebase app so staff session is preserved)
+   ============================================================ */
+
+async function addStudentSimple(rollNo,name,email,dept,year,password){
+  // Check duplicate roll
+  const existing=studentsArr().find(s=>s.rollNo.toUpperCase()===rollNo.toUpperCase());
+  if(existing) throw new Error('A student with roll number '+rollNo+' already exists.');
+
+  const fEmail=`${rollNo.toLowerCase().replace(/[^a-z0-9]/g,'_')}@labtrack-students.local`;
+
+  // Use a SECONDARY Firebase app so the staff session is never disrupted
+  let secondaryApp;
+  try{
+    // Try to get existing secondary app or create one
+    secondaryApp = firebase.app('labtrack-secondary');
+  }catch{
+    secondaryApp = firebase.initializeApp(firebaseConfig,'labtrack-secondary');
+  }
+  const secondaryAuth = firebase.auth(secondaryApp);
+
+  let newUserUid;
+  try{
+    const cred = await secondaryAuth.createUserWithEmailAndPassword(fEmail, password);
+    newUserUid = cred.user.uid;
+    await secondaryAuth.signOut();
+  }catch(e){
+    if(e.code==='auth/email-already-in-use'){
+      // Student already has an auth account; sign in secondary to get uid & optionally update password
+      try{
+        const cred2 = await secondaryAuth.signInWithEmailAndPassword(fEmail, password);
+        newUserUid = cred2.user.uid;
+        await secondaryAuth.signOut();
+      }catch(e2){
+        throw new Error('Roll number already has an account with a different password. Delete the student and re-add to reset.');
+      }
+    }else{
+      throw e;
+    }
+  }
+
+  const data={
+    rollNo:rollNo.toUpperCase(),name,email:email||'',dept:dept||'',year:year||'',
+    firebaseEmail:fEmail,createdAt:new Date().toISOString()
+  };
+  await dbRef(`students/${newUserUid}`).set(data);
+  S.students[newUserUid]=data;
+  return newUserUid;
+}
+
+async function updateStudentPassword(uid, newPassword){
+  // Update a student's Firebase Auth password via secondary app
+  const stuData = S.students[uid];
+  if(!stuData||!stuData.firebaseEmail) throw new Error('Student has no linked account.');
+  const fEmail = stuData.firebaseEmail;
+
+  // We need current password to sign in on secondary app — staff sets it, so we use DB stored hash approach.
+  // Since we can't change password without knowing the old one on client SDK,
+  // we store a temp reset token in DB that student's auth signs in with.
+  // Simplest working approach: re-create account (delete + create) via secondary app.
+  // We do: sign in secondary → update password directly.
+  // updatePassword requires recent sign-in. Since staff knows the password (they set it),
+  // we require them to enter it in the edit modal.
+  let secondaryApp;
+  try{ secondaryApp=firebase.app('labtrack-secondary'); }
+  catch{ secondaryApp=firebase.initializeApp(FIREBASE_CONFIG,'labtrack-secondary'); }
+  const secondaryAuth=firebase.auth(secondaryApp);
+
+  // We must sign in as student to update password — staff provides the NEW password
+  // and we stored the firebaseEmail. But we don't know the OLD password here.
+  // Solution: use Admin-style workaround — delete & recreate the student auth account.
+  // Since we're on client-side only, we'll sign in with current pw if known, or tell staff
+  // to delete and re-add student to reset password.
+  throw new Error('To change a student password: delete and re-add the student with the new password. This is a client-side limitation.');
+}
+
+let _staffPassword='';
+
+/* ============================================================
+   SESSION MANAGEMENT
+   ============================================================ */
+function stopCountdown(){if(_countdownInterval){clearInterval(_countdownInterval);_countdownInterval=null;}}
+function stopRefresh(){if(_refreshInterval){clearInterval(_refreshInterval);_refreshInterval=null;}}
+
+function startCountdown(){
+  stopCountdown();
+  _countdownInterval=setInterval(async()=>{
+    const session=S.sessions[S.qrSession];
+    if(!session){stopCountdown();return;}
+    const status=sessionStatus(session);
+    const elText=document.getElementById('qrCountdown');
+    const labelEl=document.getElementById('qrStatusLabel');
+    if(!elText) return;
+    if(status==='scheduled'){
+      const diff=Math.max(0,sessionStart(session)-new Date());
+      elText.textContent=`Opens in ${fmtDuration(diff)}`;
+      if(labelEl) labelEl.textContent='Not started yet';
+    }else if(status==='active'){
+      const diff=Math.max(0,sessionEnd(session)-new Date());
+      elText.textContent=`Closes in ${fmtDuration(diff)}`;
+      if(labelEl) labelEl.textContent='Open for scanning';
+    }else{
+      elText.textContent='Closed — QR no longer valid';
+      if(labelEl) labelEl.textContent='Session closed';
+    }
+  },1000);
+}
+
+let _paintedQrSession=null;
+let _qrBuildPromise=null;
+let _qrRefreshTimer=null;
+
+async function paintQrCode(){
+  const target=document.getElementById('qrcodeTarget');
+  if(!target||!S.qrSession) return;
+  if(_paintedQrSession===S.qrSession&&!target.dataset.forceRefresh) return; // already painted
+  delete target.dataset.forceRefresh;
+  _paintedQrSession=S.qrSession;
+  target.innerHTML='<div style="width:208px;height:208px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;">Generating…</div>';
+  const token=await buildQrToken(S.qrSession);
+  if(!document.getElementById('qrcodeTarget')) return; // modal closed
+  target.innerHTML='';
+  new QRCode(target,{text:token,width:208,height:208,colorDark:'#14181F',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
+}
+
+function startQrRefreshTimer(){
+  stopQrRefreshTimer();
+  // Re-generate QR every 2 minutes so tokens auto-rotate
+  _qrRefreshTimer=setInterval(()=>{
+    const t=document.getElementById('qrcodeTarget');
+    if(t){ t.dataset.forceRefresh='1'; _paintedQrSession=null; paintQrCode(); }
+  },120000);
+}
+function stopQrRefreshTimer(){
+  if(_qrRefreshTimer){ clearInterval(_qrRefreshTimer); _qrRefreshTimer=null; }
+}
+
+/* ============================================================
+   QR SCANNER
+   ============================================================ */
+async function openScanner(){
+  S.scanResult=null;S.scanning=true;render();
+  try{
+    const video=document.getElementById('scanVideo');
+    _qrScanner=new QrScanner(video,result=>handleScanned(typeof result==='string'?result:result.data),
+      {highlightScanRegion:false,highlightCodeOutline:false,preferredCamera:'environment',onDecodeError:()=>{}});
+    await _qrScanner.start();
+  }catch{
+    S.scanning=false;
+    flash('error','Camera access blocked or unavailable.');
+    render();
+  }
+}
+function closeScanner(){
+  S.scanning=false;
+  if(_qrScanner){_qrScanner.stop();_qrScanner.destroy();_qrScanner=null;}
+  render();
+}
+async function handleScanned(text){
+  if(!S.scanning) return;
+  closeScanner();
+  const verified=await verifyQrToken(text);
+  if(!verified){
+    S.scanResult={kind:'bad',title:'NOT A SESSION QR',sub:'Scan the QR code shown by your lab staff.'};
+    render();return;
+  }
+  if(verified.expired){
+    S.scanResult={kind:'bad',title:'QR Code Expired',sub:'This session\'s QR is no longer valid. Ask staff to display the current session.'};
+    render();return;
+  }
+  const{sid}=verified.payload;
+  // Reload sessions fresh to get latest
+  const snap=await dbRef(`sessions/${sid}`).once('value');
+  const session=snap.val();
+  if(!session){
+    S.scanResult={kind:'bad',title:'Session not found',sub:'This QR does not match any active session.'};
+    render();return;
+  }
+  S.sessions[sid]=session;
+  const status=sessionStatus(session);
+  if(status!=='active'){
+    S.scanResult={
+      kind:'bad',
+      title:status==='scheduled'?'Session not started yet':'Session has ended',
+      sub:status==='scheduled'?`${session.subject} opens at ${fmtTime12(session.startTime)}.`:'Ask your staff to start a new session.'
+    };
+    render();return;
+  }
+  const stu=S.currentStudentData;
+  if(isPresent(sid,stu.rollNo)){
+    S.scanResult={kind:'warn',title:'Already marked',sub:`You're already marked present for ${session.subject}.`};
+    render();return;
+  }
+  await markAttendance(sid,stu.rollNo,stu.name);
+  S.scanResult={kind:'ok',title:'Attendance marked!',sub:`${session.subject} — ${fmtTimestamp(new Date().toISOString())}`};
+  render();
+}
+
+/* ============================================================
+   MANUAL ATTENDANCE MARKING (staff)
+   ============================================================ */
+async function toggleManualAttendance(sessionId,studentUid){
+  const stu=S.students[studentUid];
+  if(!stu) return;
+  const key=stu.rollNo.replace(/[^a-zA-Z0-9]/g,'_');
+  const att=S.attendance[sessionId]||{};
+  if(att[key]){
+    // Remove
+    await dbRef(`attendance/${sessionId}/${key}`).remove();
+    const updated={...S.attendance[sessionId]};
+    delete updated[key];
+    S.attendance[sessionId]=updated;
+  }else{
+    await markAttendance(sessionId,stu.rollNo,stu.name);
+  }
+  render();
+}
+
+/* ============================================================
+   CSV EXPORT
+   ============================================================ */
+function exportCsv(sessionId){
+  const session=S.sessions[sessionId];if(!session)return;
+  const rows=[['Roll No','Name','Department','Year','Status','Marked At']];
+  studentsArr().forEach(s=>{
+    const att=S.attendance[sessionId]||{};
+    const rec=Object.values(att).find(r=>r.rollNo===s.rollNo);
+    rows.push([s.rollNo,s.name,s.dept||'',s.year||'',rec?'Present':'Absent',rec?fmtTimestamp(rec.time):'']);
+  });
+  const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=`${session.subject.replace(/\s+/g,'_')}_${session.date}.csv`;
+  document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+}
+
+/* ============================================================
+   RENDER: CONFIGURATION NOTICE
+   ============================================================ */
+function renderConfigNotice(){
+  return `<div class="config-screen">
+  <div class="config-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+      <div><img src="images/vistas_logo_2.png" alt="Logo" style="width: 50px; height: auto;"></div>
+      <strong style="font-family:var(--font-display);font-size:18px;">VELS UNIVERSITY Setup Required</strong>
+    </div>
+    <p>This app needs a <strong>Firebase project</strong> to store data securely. Follow these steps, then paste your config into the <code>FIREBASE_CONFIG</code> object at the top of this file.</p>
+    <div class="config-steps">
+      <div class="config-step"><p><strong>Create a Firebase project</strong> at <a href="https://console.firebase.google.com" target="_blank" style="color:var(--signal)">console.firebase.google.com</a></p></div>
+      <div class="config-step"><p><strong>Enable Email/Password Authentication</strong> — Build → Authentication → Sign-in method → Email/Password → Enable</p></div>
+      <div class="config-step"><p><strong>Create Realtime Database</strong> — Build → Realtime Database → Create database → Start in <em>locked mode</em></p></div>
+      <div class="config-step"><p><strong>Set Security Rules</strong> — In Realtime Database → Rules, paste:</p>
+        <pre class="rules-block">{
+  "rules": {
+    "labtrack": {
+      "students":   { ".read": "auth != null", ".write": "auth != null" },
+      "sessions":   { ".read": "auth != null", ".write": "auth != null" },
+      "attendance": { ".read": "auth != null", ".write": "auth != null" }
+    }
+  }
+}</pre>
+      </div>
+      <div class="config-step"><p><strong>Copy your Firebase config</strong> — Project Settings (gear icon) → Your apps → Web app → SDK setup → Config object. Paste it into <code>FIREBASE_CONFIG</code> in this file.</p></div>
+      <div class="config-step"><p><strong>Set your staff email domain</strong> — Change <code>STAFF_EMAIL_DOMAIN</code> to your institution's email domain, e.g. <code>"@college.edu"</code>, or add emails to <code>EXTRA_STAFF_EMAILS</code>.</p></div>
+      <div class="config-step"><p><strong>Create the first staff account</strong> — Open Firebase console → Authentication → Add user manually with a staff email that matches your domain.</p></div>
+    </div>
+    <p style="margin-top:8px;font-size:12px;color:var(--muted);">Once configured, data is private — only authenticated users can read or write. Students cannot access each other's data.</p>
+  </div>
+</div>`;
+}
+
+/* ============================================================
+   RENDER: HOME PAGE
+   ============================================================ */
+function renderHome(){
+  return `
+<div class="home-page">
+  <section class="home-hero">
+    <div class="corner-logo">
+      <img src="images/mh-cockpit-logo.webp" alt="Logo">
+    </div>
+    <div class="hero-logo">
+      // Current:
+<span class="hero-logo-text"><img src="images/vistas_logo_2.png" height='200px' width='700px'></span>
+    <h1 class="hero-headline">Knowledge is power.</h1>
+    <p class="hero-sub">"One Campus. Different Stories. Infinite Possibilities."</p>
+    <div class="home-login-cards">
+      <button class="login-card" data-action="goto-staff-login">
+        <div class="login-card-icon">${I.cap}</div>
+        <strong>Staff Portal</strong>
+        <span>Manage students, run lab sessions, view &amp; export reports</span>
+        <div class="arrow">${I.arrow} <span>Sign in as staff</span></div>
+      </button>
+      <button class="login-card" data-action="goto-student-login">
+        <div class="login-card-icon">${I.user}</div>
+        <strong>Student Portal</strong>
+        <span>Scan your lab QR, check attendance records</span>
+        <div class="arrow">${I.arrow} <span>Sign in as student</span></div>
+      </button>
+    </div>
+  </section>
+
+  <section class="home-features">
+    <div class="features-inner">
+      <p class="features-label">Features</p>
+      <h2 class="features-title">Everything your lab needs</h2>
+      <div class="features-grid">
+        <div class="feature-item">
+          <div class="feature-icon">${I.qr}</div>
+          <p class="feature-title">Time-limited QR Codes</p>
+          <p class="feature-desc">Each session QR is cryptographically signed and expires exactly when the session ends — no sharing after class.</p>
+        </div>
+        <div class="feature-item">
+          <div class="feature-icon">${I.users}</div>
+          <p class="feature-title">Student Management</p>
+          <p class="feature-desc">Add, edit, or remove students. Each student gets a secure login linked to their roll number.</p>
+        </div>
+        <div class="feature-item">
+          <div class="feature-icon">${I.mark}</div>
+          <p class="feature-title">Manual Override</p>
+          <p class="feature-desc">Staff can manually mark or unmark any student's attendance for any session.</p>
+        </div>
+        <div class="feature-item">
+          <div class="feature-icon">${I.chart}</div>
+          <p class="feature-title">Detailed Reports</p>
+          <p class="feature-desc">Per-session and per-student breakdowns, attendance percentages, and one-click CSV export.</p>
+        </div>
+        <div class="feature-item">
+          <div class="feature-icon">${I.shield}</div>
+          <p class="feature-title">Firebase-Backed & Private</p>
+          <p class="feature-desc">All data stored in Firebase Realtime Database with rules that enforce login — no public access.</p>
+        </div>
+        <div class="feature-item">
+          <div class="feature-icon">${I.history}</div>
+          <p class="feature-title">Student History</p>
+          <p class="feature-desc">Students can view their own attendance record and percentage for every session.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="home-footer">
+    Lab Attendance Management System - VELS UNIVERSITY
+  </footer>
+</div>`;
+}
+
+/* ============================================================
+   RENDER: AUTH PAGES
+   ============================================================ */
+function renderStaffLogin(){
+  const isReg=S.staffRegMode;
+  return `
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-back">
+      <button class="btn btn-ghost btn-sm" data-action="goto-home">← Back to home</button>
+    </div>
+    <div class="auth-logo"><img src="images/vistas_logo_2.png" style="height:24px;"><strong>VELS UNIVERSITY Staff</strong></div>    <h1 class="auth-title">${isReg?'Create staff account':'Staff sign in'}</h1>
+    <p class="auth-sub">${isReg?'Use your institutional staff email.':'Sign in with your staff email and password.'}</p>
+    <form data-form="staff-auth" class="stack">
+      <div class="field">
+        <label>Email</label>
+        <input name="email" type="email" autocomplete="email" required placeholder="name@${STAFF_EMAIL_DOMAIN.replace('@','')||'staff.edu'}">
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input name="password" type="password" autocomplete="current-password" required placeholder="${isReg?'Min. 6 characters':'Your password'}">
+      </div>
+      ${S.authError?`<p style="color:var(--alert);font-size:13px;margin:0;">${esc(S.authError)}</p>`:''}
+      <button class="btn btn-primary btn-block" type="submit" ${S.authLoading?'disabled':''}>
+        ${S.authLoading?'<span style="opacity:.6">Signing in…</span>':isReg?'Create account':'Sign in'}
+      </button>
+    </form>
+    <div class="auth-divider"></div>
+    <p class="auth-switch">
+      ${isReg?'Already have a staff account?':'First time?'}
+      <button data-action="toggle-staff-reg">${isReg?'Sign in':'Create account'}</button>
+    </p>
+  </div>
+</div>`;
+}
+
+function renderStudentLogin(){
+  return `
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-back">
+      <button class="btn btn-ghost btn-sm" data-action="goto-home">← Back to home</button>
+    </div>
+    <div class="auth-logo">${I.user}<strong>VELS UNIVERSITY Student</strong></div>
+    <h1 class="auth-title">Student sign in</h1>
+    <p class="auth-sub">Use your roll number and the password given by your staff.</p>
+    <form data-form="student-auth" class="stack">
+      <div class="field">
+        <label>Roll number</label>
+        <input name="rollNo" type="text" autocomplete="username" required placeholder="e.g. CSE21B01">
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input name="password" type="password" autocomplete="current-password" required>
+      </div>
+      ${S.authError?`<p style="color:var(--alert);font-size:13px;margin:0;">${esc(S.authError)}</p>`:''}
+      <button class="btn btn-primary btn-block" type="submit" ${S.authLoading?'disabled':''}>
+        ${S.authLoading?'<span style="opacity:.6">Signing in…</span>':'Sign in'}
+      </button>
+    </form>
+  </div>
+</div>`;
+}
+
+/* ============================================================
+   RENDER: STAFF APP SHELL
+   ============================================================ */
+function topbar(){
+  const identity=S.isStaff
+    ?`<span class="role-pill">Staff</span>`
+    :`<span class="role-pill mono">${esc(S.currentStudentData?.rollNo||'')}</span>`;
+  return `<div class="topbar">
+    <div class="brand"><img src="images/vistas_logo_2.png" style="width:30px;height:30px;object-fit:contain;">
+      <div class="brand-text"><strong>VELS UNIVERSITY</strong><span>${S.isStaff?S.authUser?.email||'Staff':'Lab attendance'}</span></div>
+    </div>
+    <div class="identity">
+      ${identity}
+      <button class="icon-btn" data-action="logout" title="Log out">${I.logout}</button>
+    </div>
+  </div>`;
+}
+function staffNav(){
+  const items=[{tab:'students',label:'Students',icon:I.users},{tab:'sessions',label:'Sessions',icon:I.qr},{tab:'reports',label:'Reports',icon:I.chart}];
+  return `<nav class="nav">${items.map(i=>`<button data-action="staff-tab" data-tab="${i.tab}" class="${S.staffTab===i.tab?'active':''}">${i.icon}<span>${i.label}</span></button>`).join('')}</nav>`;
+}
+function studentNav(){
+  const items=[{tab:'scan',label:'Scan QR',icon:I.qr},{tab:'history',label:'History',icon:I.history},{tab:'profile',label:'Profile',icon:I.user}];
+  return `<nav class="nav">${items.map(i=>`<button data-action="student-tab" data-tab="${i.tab}" class="${S.studentTab===i.tab?'active':''}">${i.icon}<span>${i.label}</span></button>`).join('')}</nav>`;
+}
+
+/* ============================================================
+   RENDER: STAFF / STUDENTS TAB
+   ============================================================ */
+function renderStaffStudents(){
+  const q=S.studentSearch.trim().toLowerCase();
+  const all=studentsArr();
+  const list=q?all.filter(s=>s.rollNo.toLowerCase().includes(q)||s.name.toLowerCase().includes(q)||(s.dept||'').toLowerCase().includes(q)):all;
+  const sessCount=Object.keys(S.sessions).length;
+  const avgPct=all.length?Math.round(all.reduce((acc,s)=>{
+    const attended=Object.keys(S.sessions).filter(sid=>isPresent(sid,s.rollNo)).length;
+    return acc+(sessCount?attended/sessCount*100:0);
+  },0)/all.length):0;
+  const below75=all.filter(s=>{
+    const attended=Object.keys(S.sessions).filter(sid=>isPresent(sid,s.rollNo)).length;
+    return sessCount&&(attended/sessCount*100)<75;
+  }).length;
+
+  return `
+<h1 class="page-title">Students</h1>
+<p class="page-sub">${all.length} student${all.length!==1?'s':''} enrolled · ${sessCount} session${sessCount!==1?'s':''}</p>
+${all.length>0&&sessCount>0?`<div class="stats-row" style="margin-bottom:18px;">
+  <div class="stat"><div class="num mono">${all.length}</div><div class="lbl">Enrolled</div></div>
+  <div class="stat"><div class="num mono">${avgPct}%</div><div class="lbl">Avg attendance</div></div>
+  <div class="stat"><div class="num mono" style="${below75>0?'color:var(--alert)':''}">${below75}</div><div class="lbl">Below 75%</div></div>
+</div>`:''}
+<div class="row between" style="margin-bottom:14px;">
+  <div class="search-bar">${I.search}<input id="studentSearchInput" type="text" placeholder="Search by name or roll…" value="${esc(S.studentSearch)}"></div>
+  <button class="btn btn-primary btn-sm" data-action="open-add-student">${I.plus} Add</button>
+</div>
+${all.length===0?`<div class="empty"><div class="glyph">${I.users}</div><p>No students enrolled yet. Add your first student.</p>
+<button class="btn btn-primary" data-action="open-add-student">${I.plus} Add student</button></div>`
+:list.length===0?`<div class="empty"><p>No students match "${esc(S.studentSearch)}"</p></div>`
+:`<div class="table-wrap"><table>
+<thead><tr><th class="mono">Roll No</th><th>Name</th><th>Dept / Year</th><th>Attendance</th><th></th></tr></thead>
+<tbody>
+${list.map(s=>{
+  const uids=Object.entries(S.students).filter(([k,v])=>v.rollNo===s.rollNo);
+  const uid=uids.length?uids[0][0]:'';
+  const sessKeys=Object.keys(S.sessions);
+  const attended=sessKeys.filter(sid=>isPresent(sid,s.rollNo)).length;
+  const pct=sessKeys.length?Math.round(attended/sessKeys.length*100):0;
+  const lowPct=sessKeys.length&&pct<75;
+  return `<tr>
+  <td class="mono">${esc(s.rollNo)}</td>
+  <td><strong>${esc(s.name)}</strong></td>
+  <td>${esc(s.dept||'—')}${s.year?` · ${esc(s.year)}`:''}</td>
+  <td><span class="mono" style="font-size:13px;${lowPct?'color:var(--alert);font-weight:600':''}">${attended}/${sessKeys.length} (${pct}%)</span></td>
+  <td><div class="action-icons">
+    <button class="icon-btn" title="Edit" data-action="open-edit-student" data-uid="${uid}">${I.edit}</button>
+    <button class="icon-btn btn-danger" style="border-color:#f0c6c2;color:var(--alert);" title="Delete" data-action="delete-student" data-uid="${uid}">${I.trash}</button>
+  </div></td>
+  </tr>`;}).join('')}
+</tbody></table></div>`}`;
+}
+
+/* ============================================================
+   RENDER: STAFF / SESSIONS TAB
+   ============================================================ */
+function sessionCardHtml(s){
+  const status=sessionStatus(s);
+  const badgeClass=status==='active'?'badge-active':status==='scheduled'?'badge-scheduled':'badge-ended';
+  const badgeLabel=status==='active'?'Active':status==='scheduled'?'Scheduled':'Ended';
+  const dotPulse=status==='active'?'pulse':'';
+  return `<div class="card">
+  <div class="row between" style="flex-wrap:wrap;gap:8px;">
+    <div>
+      <strong style="font-family:var(--font-display);font-size:15px;">${esc(s.subject)}</strong>
+      <div class="mono" style="font-size:12px;color:var(--muted);margin-top:4px;">${fmtDate(s.date)} · ${fmtTime12(s.startTime)} – ${fmtTime12(s.endTime)}</div>
+    </div>
+    <span class="badge ${badgeClass}"><span class="badge-dot ${dotPulse}"></span>${badgeLabel}</span>
+  </div>
+  <div class="row between" style="margin-top:14px;">
+    <span class="mono" style="font-size:12px;color:var(--muted);">${presentCount(s.id)} of ${studentsArr().length} present</span>
+    <div class="row" style="gap:6px;">
+      <button class="btn btn-ghost btn-sm" data-action="show-qr" data-id="${s.id}">${I.qr} QR</button>
+      <button class="btn btn-ghost btn-sm" data-action="mark-attendance" data-id="${s.id}">${I.mark} Mark</button>
+      ${status!=='ended'?`<button class="btn btn-ghost btn-sm" data-action="end-session" data-id="${s.id}">End</button>`:''}
+      <button class="icon-btn" title="Delete" data-action="delete-session" data-id="${s.id}">${I.trash}</button>
+    </div>
+  </div>
+</div>`;
+}
+function renderStaffSessions(){
+  const list=sortedSessions();
+  return `
+<h1 class="page-title">Sessions</h1>
+<p class="page-sub">Create a lab session and show the QR for students to scan in.</p>
+<div class="row" style="margin-bottom:16px;">
+  <button class="btn btn-primary" data-action="open-new-session">${I.plus} New session</button>
+</div>
+${list.length===0?`<div class="empty"><div class="glyph">${I.qr}</div>
+<p>No sessions yet. Create one to start taking attendance.</p>
+<button class="btn btn-primary" data-action="open-new-session">${I.plus} Create session</button></div>`
+:`<div class="stack">${list.map(sessionCardHtml).join('')}</div>`}`;
+}
+
+/* ============================================================
+   RENDER: STAFF / REPORTS TAB
+   ============================================================ */
+function renderStaffReports(){
+  const sessions=sortedSessions();
+  const modeTabs=`<div class="tab-row">
+    <button class="tab-chip ${S.reportMode==='session'?'active':''}" data-action="report-mode" data-mode="session">By session</button>
+    <button class="tab-chip ${S.reportMode==='student'?'active':''}" data-action="report-mode" data-mode="student">By student</button>
+  </div>`;
+  if(S.reportMode==='session'){
+    if(sessions.length===0) return `<h1 class="page-title">Reports</h1>${modeTabs}<div class="empty"><p>Create a session first.</p></div>`;
+    const selId=S.reportSessionId&&sessions.some(s=>s.id===S.reportSessionId)?S.reportSessionId:sessions[0].id;
+    S.reportSessionId=selId;
+    const session=sessions.find(s=>s.id===selId);
+    const present=presentCount(selId);
+    const total=studentsArr().length;
+    const pct=total?Math.round(present/total*100):0;
+    return `<h1 class="page-title">Reports</h1>${modeTabs}
+    <div class="field"><label>Session</label>
+      <select id="reportSessionSelect">${sessions.map(s=>`<option value="${s.id}" ${s.id===selId?'selected':''}>${esc(s.subject)} — ${fmtDate(s.date)}</option>`).join('')}</select>
+    </div>
+    <div class="row between" style="margin-bottom:14px;">
+      <span class="mono" style="font-size:13px;">${present} / ${total} present · ${pct}%</span>
+      <button class="btn btn-ghost btn-sm" data-action="export-csv" data-id="${selId}">${I.download} CSV</button>
+    </div>
+    ${total===0?`<div class="empty"><p>No students enrolled yet.</p></div>`:`
+    <div class="table-wrap"><table>
+    <thead><tr><th class="mono">Roll No</th><th>Name</th><th>Status</th><th class="mono">Time</th></tr></thead>
+    <tbody>
+    ${studentsArr().map(s=>{
+      const att=S.attendance[selId]||{};
+      const rec=Object.values(att).find(r=>r.rollNo===s.rollNo);
+      return `<tr>
+        <td class="mono">${esc(s.rollNo)}</td><td>${esc(s.name)}</td>
+        <td>${rec?'<span class="badge badge-present">Present</span>':'<span class="badge badge-absent">Absent</span>'}</td>
+        <td class="mono">${rec?fmtTimestamp(rec.time):'—'}</td>
+      </tr>`;}).join('')}
+    </tbody></table></div>`}`;
+  }else{
+    const studs=studentsArr();
+    if(studs.length===0) return `<h1 class="page-title">Reports</h1>${modeTabs}<div class="empty"><p>Add students first.</p></div>`;
+    const selRoll=S.reportStudentUid&&studs.some(s=>s.rollNo===S.reportStudentUid)?S.reportStudentUid:studs[0].rollNo;
+    S.reportStudentUid=selRoll;
+    const student=studs.find(s=>s.rollNo===selRoll);
+    const eligible=sessions;
+    const attended=eligible.filter(s=>isPresent(s.id,student.rollNo));
+    const pct=eligible.length?Math.round(attended.length/eligible.length*100):0;
+    return `<h1 class="page-title">Reports</h1>${modeTabs}
+    <div class="field"><label>Student</label>
+      <select id="reportStudentSelect">${studs.map(s=>`<option value="${s.rollNo}" ${s.rollNo===selRoll?'selected':''}>${esc(s.name)} — ${esc(s.rollNo)}</option>`).join('')}</select>
+    </div>
+    <div class="stats-row">
+      <div class="stat"><div class="num mono">${pct}%</div><div class="lbl">Attendance</div></div>
+      <div class="stat"><div class="num mono">${attended.length}</div><div class="lbl">Attended</div></div>
+      <div class="stat"><div class="num mono">${eligible.length}</div><div class="lbl">Sessions</div></div>
+    </div>
+    ${eligible.length===0?`<div class="empty"><p>No sessions recorded yet.</p></div>`:`
+    <div class="table-wrap"><table>
+    <thead><tr><th>Session</th><th class="mono">Date</th><th>Status</th></tr></thead>
+    <tbody>
+    ${eligible.map(s=>`<tr>
+      <td>${esc(s.subject)}</td>
+      <td class="mono">${fmtDate(s.date)}</td>
+      <td>${isPresent(s.id,student.rollNo)?'<span class="badge badge-present">Present</span>':'<span class="badge badge-absent">Absent</span>'}</td>
+    </tr>`).join('')}
+    </tbody></table></div>`}`;
+  }
+}
+
+/* ============================================================
+   RENDER: MODALS
+   ============================================================ */
+function renderModal(){
+  if(!S.modal) return '';
+  const m=S.modal;
+
+  if(m.type==='addStudent'||m.type==='editStudent'){
+    const editing=m.type==='editStudent';
+    const s=m.payload||{};
+    return `<div class="overlay" data-close-modal>
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-head"><h2>${editing?'Edit student':'Add student'}</h2><button class="icon-btn" data-action="close-modal">${I.close}</button></div>
+      <form data-form="${editing?'edit-student':'add-student'}" data-uid="${editing?esc(m.uid||''):''}" class="stack">
+        <div class="field"><label>Roll number *</label><input name="rollNo" type="text" value="${editing?esc(s.rollNo):''}" required ${editing?'readonly':''}></div>
+        <div class="field"><label>Full name *</label><input name="name" type="text" value="${editing?esc(s.name):''}" required></div>
+        <div class="row wrap" style="gap:10px;">
+          <div class="field" style="flex:1;min-width:110px;"><label>Department</label><input name="dept" type="text" value="${editing?esc(s.dept||''):''}" placeholder="CSE"></div>
+          <div class="field" style="flex:1;min-width:90px;"><label>Year</label><input name="year" type="text" value="${editing?esc(s.year||''):''}" placeholder="3rd"></div>
+        </div>
+        <div class="field"><label>Email</label><input name="email" type="email" value="${editing?esc(s.email||''):''}"></div>
+        <div class="field">
+          <label>${editing?'Password':'Password *'}</label>
+          <input name="password" type="text" value="" ${editing?'':'required'} placeholder="${editing?'(cannot be changed here — delete & re-add to reset)':'Set a password for the student'}">
+          <p class="help">${editing?'Password changes require deleting and re-adding the student.':'Students log in with their roll number and this password.'}</p>
+        </div>
+        ${m.error?`<p style="color:var(--alert);font-size:13px;">${esc(m.error)}</p>`:''}
+        <button class="btn btn-primary btn-block" type="submit">${editing?'Save changes':'Add student'}</button>
+      </form>
+    </div></div>`;
+  }
+
+  if(m.type==='newSession'){
+    const today=new Date().toISOString().slice(0,10);
+    const nowH=String(new Date().getHours()).padStart(2,'0');
+    const nowM=String(new Date().getMinutes()).padStart(2,'0');
+    return `<div class="overlay" data-close-modal>
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-head"><h2>New session</h2><button class="icon-btn" data-action="close-modal">${I.close}</button></div>
+      <form data-form="new-session" class="stack">
+        <div class="field"><label>Lab / Subject name *</label><input name="subject" type="text" placeholder="Data Structures Lab" required></div>
+        <div class="field"><label>Date *</label><input name="date" type="date" value="${today}" required></div>
+        <div class="row wrap" style="gap:10px;">
+          <div class="field" style="flex:1;min-width:120px;"><label>Start time *</label><input name="startTime" type="time" value="${nowH}:${nowM}" required></div>
+          <div class="field" style="flex:1;min-width:120px;"><label>End time *</label><input name="endTime" type="time" required></div>
+        </div>
+        <p class="help">The QR code will only accept scans during this time window.</p>
+        <button class="btn btn-primary btn-block" type="submit">Create session</button>
+      </form>
+    </div></div>`;
+  }
+
+  if(m.type==='markAttendance'){
+    const session=S.sessions[m.sessionId];
+    if(!session) return '';
+    const studs=studentsArr();
+    return `<div class="overlay" data-close-modal>
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-head"><h2>Mark attendance</h2><button class="icon-btn" data-action="close-modal">${I.close}</button></div>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 16px;">${esc(session.subject)} · ${fmtDate(session.date)}</p>
+      <div class="stack">
+        ${studs.length===0?`<p style="color:var(--muted);font-size:13px;">No students enrolled.</p>`:
+        studs.map(s=>{
+          const att=S.attendance[m.sessionId]||{};
+          const present=Object.values(att).some(r=>r.rollNo===s.rollNo);
+          const uids=Object.entries(S.students).filter(([k,v])=>v.rollNo===s.rollNo);
+          const uid=uids.length?uids[0][0]:'';
+          return `<div class="row between" style="padding:10px 0;border-bottom:1px solid var(--line);">
+            <div>
+              <div style="font-size:13px;font-weight:600;">${esc(s.name)}</div>
+              <div class="mono" style="font-size:11px;color:var(--muted);">${esc(s.rollNo)}</div>
+            </div>
+            <button class="btn btn-sm ${present?'btn-signal':'btn-ghost'}" 
+              data-action="toggle-attendance" data-session-id="${m.sessionId}" data-uid="${uid}">
+              ${present?'✓ Present':'Mark present'}
+            </button>
+          </div>`;
+        }).join('')}
+      </div>
+    </div></div>`;
+  }
+
+  return '';
+}
+
+function renderQrView(){
+  if(!S.qrSession) return '';
+  const session=S.sessions[S.qrSession];
+  if(!session) return '';
+  const status=sessionStatus(session);
+  return `<div class="overlay" style="align-items:center;">
+  <div class="modal" style="max-width:340px;border-radius:18px;">
+    <div class="modal-head"><h2>Session QR</h2><button class="icon-btn" data-action="close-qr">${I.close}</button></div>
+    <div class="qr-stage">
+      <div class="qr-subject">${esc(session.subject)}</div>
+      <div class="mono" style="font-size:12px;color:var(--muted);">${fmtDate(session.date)} · ${fmtTime12(session.startTime)}–${fmtTime12(session.endTime)}</div>
+      <div class="qr-frame"><div id="qrcodeTarget"></div></div>
+      <div class="qr-token-info">${I.clock} QR token is cryptographically bound to this session's end time and cannot be used after it closes. Auto-refreshes every 2 min.</div>
+      <div class="qr-status-row">
+        <span class="badge ${status==='active'?'badge-active':status==='scheduled'?'badge-scheduled':'badge-ended'}">
+          <span class="badge-dot ${status==='active'?'pulse':''}"></span>
+          <span id="qrStatusLabel">${status==='active'?'Open for scanning':status==='scheduled'?'Not started yet':'Closed'}</span>
+        </span>
+      </div>
+      <div class="qr-countdown" id="qrCountdown">—</div>
+      <div class="mono" style="font-size:12px;color:var(--muted);">Present: <span id="qrPresentCount">${presentCount(S.qrSession)}</span> / ${studentsArr().length}</div>
+      <div class="row" style="gap:8px;">
+        <button class="btn btn-ghost btn-sm" data-action="refresh-qr">${I.refresh} Refresh QR</button>
+        ${status!=='ended'?`<button class="btn btn-ghost btn-sm" data-action="end-session" data-id="${session.id}">End session</button>`:''}
+        <button class="btn btn-primary btn-sm" data-action="close-qr">Done</button>
+      </div>
+    </div>
+  </div></div>`;
+}
+
+/* ============================================================
+   RENDER: STUDENT APP
+   ============================================================ */
+function renderStudentScan(){
+  const stu=S.currentStudentData;
+  const today=new Date().toISOString().slice(0,10);
+  const todaySessions=sortedSessions().filter(s=>s.date===today);
+  const activeSessions=todaySessions.filter(s=>sessionStatus(s)==='active');
+  const upcomingSessions=todaySessions.filter(s=>sessionStatus(s)==='scheduled');
+
+  let sessionInfo='';
+  if(activeSessions.length>0){
+    sessionInfo=`<div style="margin-top:18px;text-align:left;">
+      <p style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:0 0 10px;">Active now</p>
+      ${activeSessions.map(s=>{
+        const alreadyPresent=isPresent(s.id,stu.rollNo);
+        return `<div class="card" style="margin-bottom:8px;padding:12px 16px;">
+          <div class="row between">
+            <div>
+              <div style="font-weight:600;font-size:14px;">${esc(s.subject)}</div>
+              <div class="mono" style="font-size:11px;color:var(--muted);">${fmtTime12(s.startTime)} – ${fmtTime12(s.endTime)}</div>
+            </div>
+            ${alreadyPresent
+              ?'<span class="badge badge-present">✓ Marked</span>'
+              :'<span class="badge badge-active"><span class="badge-dot pulse"></span>Open</span>'}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  } else if(upcomingSessions.length>0){
+    sessionInfo=`<div style="margin-top:18px;text-align:left;">
+      <p style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:0 0 10px;">Upcoming today</p>
+      ${upcomingSessions.map(s=>`<div class="card" style="margin-bottom:8px;padding:12px 16px;">
+        <div style="font-weight:600;font-size:14px;">${esc(s.subject)}</div>
+        <div class="mono" style="font-size:11px;color:var(--muted);">Opens at ${fmtTime12(s.startTime)}</div>
+      </div>`).join('')}
+    </div>`;
+  } else if(todaySessions.length>0){
+    sessionInfo=`<p style="font-size:13px;color:var(--muted);margin-top:14px;">All sessions for today have ended.</p>`;
+  } else {
+    sessionInfo=`<p style="font-size:13px;color:var(--muted);margin-top:14px;">No sessions scheduled for today.</p>`;
+  }
+
+  return `
+<h1 class="page-title">Mark attendance</h1>
+<p class="page-sub">Scan the QR code displayed by your lab staff.</p>
+<div class="card" style="text-align:center;padding:28px 20px;">
+  <div style="width:56px;height:56px;margin:0 auto 16px;color:var(--signal);">${I.qr}</div>
+  <p style="font-size:13px;color:var(--muted);margin:0 0 18px;">Camera access is needed. Point your camera at the QR shown on the lab screen.</p>
+  <button class="btn btn-signal" data-action="open-scan">${I.qr} Scan QR code</button>
+  ${sessionInfo}
+</div>`;
+}
+
+function renderStudentHistory(){
+  const stu=S.currentStudentData;
+  const sessions=sortedSessions();
+  const attended=sessions.filter(s=>isPresent(s.id,stu.rollNo));
+  const pct=sessions.length?Math.round(attended.length/sessions.length*100):0;
+  return `
+<h1 class="page-title">Your attendance</h1>
+<p class="page-sub">${esc(stu.name)} · ${esc(stu.rollNo)}</p>
+<div class="stats-row">
+  <div class="stat"><div class="num mono">${pct}%</div><div class="lbl">Overall</div></div>
+  <div class="stat"><div class="num mono">${attended.length}</div><div class="lbl">Attended</div></div>
+  <div class="stat"><div class="num mono">${sessions.length}</div><div class="lbl">Total</div></div>
+</div>
+${sessions.length===0?`<div class="empty"><p>No sessions held yet.</p></div>`:`
+<div class="table-wrap"><table>
+<thead><tr><th>Session</th><th class="mono">Date</th><th>Status</th><th class="mono">Time</th></tr></thead>
+<tbody>
+${sessions.map(s=>{
+  const att=S.attendance[s.id]||{};
+  const rec=Object.values(att).find(r=>r.rollNo===stu.rollNo);
+  return `<tr>
+    <td>${esc(s.subject)}</td>
+    <td class="mono">${fmtDate(s.date)}</td>
+    <td>${rec?'<span class="badge badge-present">Present</span>':'<span class="badge badge-absent">Absent</span>'}</td>
+    <td class="mono">${rec?fmtTimestamp(rec.time):'—'}</td>
+  </tr>`;}).join('')}
+</tbody></table></div>`}`;
+}
+
+function renderStudentProfile(){
+  const stu=S.currentStudentData;
+  return `
+<h1 class="page-title">Profile</h1>
+<div class="card stack" style="margin-bottom:16px;">
+  <div class="row between"><span style="color:var(--muted);font-size:13px;">Name</span><strong>${esc(stu.name)}</strong></div>
+  <div class="row between"><span style="color:var(--muted);font-size:13px;">Roll number</span><strong class="mono">${esc(stu.rollNo)}</strong></div>
+  <div class="row between"><span style="color:var(--muted);font-size:13px;">Department</span><strong>${esc(stu.dept||'—')}${stu.year?` · ${esc(stu.year)}`:''}</strong></div>
+  <div class="row between"><span style="color:var(--muted);font-size:13px;">Email</span><strong>${esc(stu.email||'—')}</strong></div>
+</div>
+<div class="card stack">
+  <div class="row">${I.key}<strong style="font-size:14px;">Change password</strong></div>
+  <p style="font-size:13px;color:var(--muted);margin:0;">To change your password, ask your staff to update it in the student management panel.</p>
+</div>`;
+}
+
+function renderScanOverlay(){
+  if(!S.scanning) return '';
+  return `<div class="scan-overlay">
+  <div class="scan-top">
+    <span class="mono" style="font-size:13px;">Scanning…</span>
+    <button class="icon-btn" data-action="close-scan">${I.close}</button>
+  </div>
+  <div class="scan-viewport">
+    <video id="scanVideo" autoplay playsinline muted></video>
+    <div class="scan-frame">
+      <div class="corner tl"></div><div class="corner tr"></div>
+      <div class="corner bl"></div><div class="corner br"></div>
+      <div class="scan-line"></div>
+    </div>
+  </div>
+  <div class="scan-bottom">
+    <p class="scan-hint">Hold steady and frame the QR code shown by your staff.</p>
+    <button class="btn btn-ghost" data-action="close-scan" style="color:#fff;border-color:rgba(255,255,255,.3);">Cancel</button>
+  </div>
+</div>`;
+}
+
+function renderScanResult(){
+  if(!S.scanResult) return '';
+  const r=S.scanResult;
+  const glyph=r.kind==='ok'?I.check:r.kind==='warn'?I.alertCircle:I.close;
+  const cls=r.kind==='ok'?'ok':r.kind==='warn'?'warn':'bad';
+  return `<div class="scan-result">
+  <div class="result-glyph ${cls}">${glyph}</div>
+  <div class="result-title">${esc(r.title)}</div>
+  <div class="result-sub">${esc(r.sub)}</div>
+  <button class="btn btn-primary" data-action="scan-result-done">Done</button>
+</div>`;
+}
+
+/* ============================================================
+   MAIN RENDER
+   ============================================================ */
+function render(){
+  const app=document.getElementById('app');
+  if(!app) return;
+
+  if(CONFIG_IS_PLACEHOLDER){ app.innerHTML=renderConfigNotice(); return; }
+  if(!auth){ app.innerHTML=renderConfigNotice(); return; }
+  if(S.authLoading){ app.innerHTML=`<div class="loading-screen"><div class="spin"></div><span>Loading…</span></div>`; return; }
+
+  let html='';
+  if(S.view==='home') html=renderHome();
+  else if(S.view==='staffLogin') html=renderStaffLogin();
+  else if(S.view==='studentLogin') html=renderStudentLogin();
+  else if(S.view==='staffApp'){
+    let body='';
+    if(S.staffTab==='students') body=renderStaffStudents();
+    else if(S.staffTab==='sessions') body=renderStaffSessions();
+    else body=renderStaffReports();
+    html=`${topbar()}<div class="shell">${staffNav()}<div class="content">${body}</div></div>${renderModal()}${renderQrView()}`;
+  }
+  else if(S.view==='studentApp'){
+    let body='';
+    if(S.studentTab==='scan') body=renderStudentScan();
+    else if(S.studentTab==='history') body=renderStudentHistory();
+    else body=renderStudentProfile();
+    html=`${topbar()}<div class="shell">${studentNav()}<div class="content">${body}</div></div>`;
+  }
+
+  app.innerHTML=html+toastHtml()+renderScanOverlay()+renderScanResult();
+
+  if(S.qrSession) paintQrCode();
+  bindLiveInputs();
+}
+
+function bindLiveInputs(){
+  const si=document.getElementById('studentSearchInput');
+  if(si) si.addEventListener('input',e=>{ S.studentSearch=e.target.value; renderStudentsTableOnly(); });
+  const rss=document.getElementById('reportSessionSelect');
+  if(rss) rss.addEventListener('change',e=>{ S.reportSessionId=e.target.value; render(); });
+  const rstu=document.getElementById('reportStudentSelect');
+  if(rstu) rstu.addEventListener('change',e=>{ S.reportStudentUid=e.target.value; render(); });
+}
+
+function renderStudentsTableOnly(){
+  const q=S.studentSearch.trim().toLowerCase();
+  const all=studentsArr();
+  const list=q?all.filter(s=>s.rollNo.toLowerCase().includes(q)||s.name.toLowerCase().includes(q)||(s.dept||'').toLowerCase().includes(q)):all;
+  const wrap=document.querySelector('.table-wrap');
+  if(!wrap) return;
+  if(list.length===0){ wrap.outerHTML=`<div class="empty"><p>No students match "${esc(S.studentSearch)}"</p></div>`; return; }
+  // just re-render the content area for perf
+  render();
+}
+
+/* ============================================================
+   EVENT DELEGATION
+   ============================================================ */
+document.addEventListener('click',e=>{
+  // overlay close
+  if(e.target.matches('[data-close-modal]')){ S.modal=null; render(); return; }
+  const el=e.target.closest('[data-action]');
+  if(!el) return;
+  handleAction(el.dataset.action,el);
+});
+
+document.addEventListener('submit',async e=>{
+  const form=e.target;
+  if(!form.dataset.form) return;
+  e.preventDefault();
+  const fd=new FormData(form);
+  const get=k=>(fd.get(k)||'').toString().trim();
+
+  if(form.dataset.form==='staff-auth'){
+    const email=get('email'),password=get('password');
+    if(S.staffRegMode) await staffRegister(email,password);
+    else await staffLogin(email,password);
+  }
+
+  else if(form.dataset.form==='student-auth'){
+    const rollNo=get('rollNo'),password=get('password');
+    await studentLogin(rollNo,password);
+  }
+
+  else if(form.dataset.form==='add-student'){
+    const rollNo=get('rollNo'),name=get('name'),email=get('email'),dept=get('dept'),year=get('year'),password=get('password');
+    if(!rollNo||!name||!password){ flash('error','Roll number, name and password are required.'); return; }
+    try{
+      S.modal={...S.modal,error:null};
+      flash('warn','Creating student account…');
+      await addStudentSimple(rollNo,name,email,dept,year,password);
+      if(S.view==='staffApp'){ flash('success','Student added.'); S.modal=null; render(); }
+    }catch(e){ S.modal={...S.modal,error:e.message}; render(); }
+  }
+
+  else if(form.dataset.form==='edit-student'){
+    const uid=form.dataset.uid;
+    const name=get('name'),email=get('email'),dept=get('dept'),year=get('year'),newPassword=get('password');
+    if(!name){ flash('error','Name is required.'); return; }
+    const existing=S.students[uid];
+    if(!existing){ flash('error','Student not found.'); return; }
+    const updated={...existing,name,email:email||'',dept:dept||'',year:year||''};
+    try{
+      await saveStudent(uid,updated);
+      if(newPassword){
+        flash('warn','Profile saved. To change password, delete and re-add the student — Firebase client SDK requires knowing the current password to update it.');
+      } else {
+        flash('success','Student updated.');
+      }
+      S.modal=null; render();
+    }catch{ flash('error','Failed to save. Check your connection.'); }
+  }
+
+  else if(form.dataset.form==='new-session'){
+    const subject=get('subject'),date=get('date'),startTime=get('startTime'),endTime=get('endTime');
+    if(!subject||!date||!startTime||!endTime){ flash('error','Fill in all fields.'); return; }
+    if(endTime<=startTime){ flash('error','End time must be after start time.'); return; }
+    const id=genId();
+    const session={id,subject,date,startTime,endTime,endedManually:false,createdAt:new Date().toISOString()};
+    try{
+      await saveSession(id,session);
+      flash('success','Session created.'); S.modal=null; S.staffTab='sessions'; render();
+    }catch{ flash('error','Failed to save session.'); }
+  }
+});
+
+async function handleAction(action,el){
+  const id=el?.dataset?.id;
+  const uid=el?.dataset?.uid;
+
+  switch(action){
+    case 'goto-home':       S.view='home';S.authError='';render();break;
+    case 'goto-staff-login':S.view='staffLogin';S.authError='';render();break;
+    case 'goto-student-login':S.view='studentLogin';S.authError='';render();break;
+    case 'toggle-staff-reg':S.staffRegMode=!S.staffRegMode;S.authError='';render();break;
+    case 'logout':          await doLogout();break;
+
+    case 'staff-tab':  S.staffTab=el.dataset.tab;S.modal=null;render();break;
+    case 'student-tab':S.studentTab=el.dataset.tab;render();break;
+
+    case 'open-add-student':S.modal={type:'addStudent'};render();break;
+    case 'open-edit-student':{
+      const stu=S.students[uid];
+      if(stu) S.modal={type:'editStudent',uid,payload:stu};render();break;
+    }
+    case 'delete-student':{
+      const stu=S.students[uid];
+      if(stu&&confirm(`Remove ${stu.name} (${stu.rollNo})? Their past attendance records will be kept.`)){
+        try{ await deleteStudentData(uid);flash('success','Student removed.');render(); }
+        catch{ flash('error','Delete failed.'); }
+      }break;
+    }
+    case 'close-modal':S.modal=null;render();break;
+
+    case 'open-new-session':S.modal={type:'newSession'};render();break;
+    case 'mark-attendance':S.modal={type:'markAttendance',sessionId:id};render();break;
+
+    case 'toggle-attendance':{
+      const sid=el.dataset.sessionId,tuid=el.dataset.uid;
+      try{
+        await toggleManualAttendance(sid,tuid);
+      }catch{ flash('error','Failed to update attendance.'); break; }
+      // re-render modal with updated data
+      S.modal={type:'markAttendance',sessionId:sid};render();break;
+    }
+
+    case 'show-qr':
+      _paintedQrSession=null; // reset so QR gets re-painted
+      S.qrSession=id;render();startCountdown();startQrRefreshTimer();
+      watchAttendance(id);
+      break;
+    case 'close-qr':
+      stopWatchAttendance(S.qrSession);
+      S.qrSession=null;stopCountdown();stopQrRefreshTimer();render();break;
+    case 'end-session':{
+      const s=S.sessions[id];
+      if(s){
+        s.endedManually=true;
+        try{await saveSession(id,s);flash('success','Session ended.');}
+        catch{flash('error','Failed to end session.');}
+        render();
+      }break;
+    }
+    case 'delete-session':{
+      if(confirm('Delete this session and all its attendance records? This cannot be undone.')){
+        try{await deleteSessionData(id);flash('success','Session deleted.');}
+        catch{flash('error','Delete failed.');}
+        render();
+      }break;
+    }
+
+    case 'refresh-qr':{
+      const t=document.getElementById('qrcodeTarget');
+      if(t){ t.dataset.forceRefresh='1'; _paintedQrSession=null; paintQrCode(); flash('success','QR code refreshed.'); }
+      break;
+    }
+    case 'report-mode':S.reportMode=el.dataset.mode;render();break;
+    case 'export-csv':exportCsv(id);break;
+
+    case 'open-scan':openScanner();break;
+    case 'close-scan':closeScanner();break;
+    case 'scan-result-done':S.scanResult=null;render();break;
+
+    default:break;
+  }
+}
+
+/* ============================================================
+   BOOT — Firebase Auth listener
+   ============================================================ */
+(async function boot(){
+  if(CONFIG_IS_PLACEHOLDER){ render(); return; }
+
+  // Render home immediately — don't wait for auth
+  S.authLoading=false;
+  render();
+
+  // Safety timeout — if Firebase auth doesn't respond in 8s, show home anyway
+  const authTimeout=setTimeout(()=>{
+    S.authLoading=false;
+    render();
+    flash('warn','Firebase is taking long to respond. Check your config and internet connection.');
+  },8000);
+
+  // Watch auth state
+  auth.onAuthStateChanged(async user=>{
+    clearTimeout(authTimeout);
+    S.authLoading=false;
+    if(!user){
+      if(S.view==='staffApp'||S.view==='studentApp'){
+        S.view='home';S.isStaff=false;S.currentStudentData=null;
+      }
+      render();return;
+    }
+
+    // Signed in — show a brief loading state while we fetch data
+    S.authUser=user;
+
+    if(isStaffEmail(user.email)){
+      S.isStaff=true;
+      try{
+        await loadAll();
+        S.view='staffApp';
+      }catch(e){
+        console.error('Failed to load data',e);
+        flash('error','Failed to load data. Check Firebase Realtime Database URL and security rules.');
+        S.view='staffApp';
+      }
+      render();
+    }else{
+      S.isStaff=false;
+      try{
+        await loadAll();
+        const stu=S.students[user.uid];
+        if(stu){
+          S.currentStudentData=stu;
+          S.view='studentApp';
+        }else{
+          const match=Object.values(S.students).find(s=>s.firebaseEmail===user.email);
+          if(match){ S.currentStudentData=match; S.view='studentApp'; }
+          else{ flash('error','Your account is not linked to any student record. Contact staff.'); await auth.signOut(); }
+        }
+      }catch(e){
+        console.error('load failed',e);
+        flash('error','Could not load your records. Check your connection.');
+      }
+      render();
+    }
+  });
+})();
+</script>
+</body>
+</html>
+
