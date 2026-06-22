@@ -59,7 +59,7 @@ input,select{font-family:inherit;}
   position:sticky;top:0;z-index:30;
   display:flex;align-items:center;justify-content:space-between;
   padding:14px 18px;
-  background:var(--surface);
+  background:#0f0950;
   border-bottom:1px solid var(--line);
 }
 .brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;}
@@ -75,13 +75,15 @@ input,select{font-family:inherit;}
 .icon-btn{
   background:none;border:1px solid var(--line);border-radius:10px;
   width:36px;height:36px;display:flex;align-items:center;justify-content:center;
-  cursor:pointer;color:var(--ink);
+  cursor:pointer;color:#ffffff;
 }
-.icon-btn:hover{background:var(--paper);}
+.icon-btn:hover{background:#000000;}
 .icon-btn:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{
   outline:2px solid var(--signal);outline-offset:2px;
 }
-
+.brand-text strong{
+    color: white;
+}
 /* ============================================================
    LAYOUT SHELL
    ============================================================ */
@@ -1083,45 +1085,6 @@ function renderHome(){
     </div>
   </section>
 
-  <section class="home-features">
-    <div class="features-inner">
-      <p class="features-label">Features</p>
-      <h2 class="features-title">Everything your lab needs</h2>
-      <div class="features-grid">
-        <div class="feature-item">
-          <div class="feature-icon">${I.qr}</div>
-          <p class="feature-title">Time-limited QR Codes</p>
-          <p class="feature-desc">Each session QR is cryptographically signed and expires exactly when the session ends — no sharing after class.</p>
-        </div>
-        <div class="feature-item">
-          <div class="feature-icon">${I.users}</div>
-          <p class="feature-title">Student Management</p>
-          <p class="feature-desc">Add, edit, or remove students. Each student gets a secure login linked to their roll number.</p>
-        </div>
-        <div class="feature-item">
-          <div class="feature-icon">${I.mark}</div>
-          <p class="feature-title">Manual Override</p>
-          <p class="feature-desc">Staff can manually mark or unmark any student's attendance for any session.</p>
-        </div>
-        <div class="feature-item">
-          <div class="feature-icon">${I.chart}</div>
-          <p class="feature-title">Detailed Reports</p>
-          <p class="feature-desc">Per-session and per-student breakdowns, attendance percentages, and one-click CSV export.</p>
-        </div>
-        <div class="feature-item">
-          <div class="feature-icon">${I.shield}</div>
-          <p class="feature-title">Firebase-Backed & Private</p>
-          <p class="feature-desc">All data stored in Firebase Realtime Database with rules that enforce login — no public access.</p>
-        </div>
-        <div class="feature-item">
-          <div class="feature-icon">${I.history}</div>
-          <p class="feature-title">Student History</p>
-          <p class="feature-desc">Students can view their own attendance record and percentage for every session.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
   <footer class="home-footer">
     Lab Attendance Management System - VELS UNIVERSITY
   </footer>
@@ -1200,8 +1163,8 @@ function topbar(){
     ?`<span class="role-pill">Staff</span>`
     :`<span class="role-pill mono">${esc(S.currentStudentData?.rollNo||'')}</span>`;
   return `<div class="topbar">
-    <div class="brand"><img src="images/vistas_logo_2.png" style="width:30px;height:30px;object-fit:contain;">
-      <div class="brand-text"><strong>VELS UNIVERSITY</strong><span>${S.isStaff?S.authUser?.email||'Staff':'Lab attendance'}</span></div>
+    <div class="brand"><img src="images/vistas_logo_2.png" style="width:150px;height:50px;object-fit:contain;">
+      <div class="brand-text"><strong></strong><span>${S.isStaff?S.authUser?.email||'Staff':'Lab attendance'}</span></div>
     </div>
     <div class="identity">
       ${identity}
@@ -1591,8 +1554,7 @@ function renderStudentProfile(){
   <div class="row between"><span style="color:var(--muted);font-size:13px;">Department</span><strong>${esc(stu.dept||'—')}${stu.year?` · ${esc(stu.year)}`:''}</strong></div>
   <div class="row between"><span style="color:var(--muted);font-size:13px;">Email</span><strong>${esc(stu.email||'—')}</strong></div>
 </div>
-<div class="card stack">
-  <div class="row">${I.key}<strong style="font-size:14px;">Change password</strong></div>
+<div>
   <p style="font-size:13px;color:var(--muted);margin:0;">To change your password, ask your staff to update it in the student management panel.</p>
 </div>`;
 }
