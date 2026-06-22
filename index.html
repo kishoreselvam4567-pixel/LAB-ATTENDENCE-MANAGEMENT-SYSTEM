@@ -455,6 +455,21 @@ pre.rules-block{
     height: auto;
     border-radius: 12px;
 }
+
+
+.hero-logo {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 30px;
+}
+
+.vels-logo {
+    width: 100%;
+    max-width: 700px;
+    height: auto;
+    display: block;
+}
 </style>
 </head>
 <body>
@@ -1043,13 +1058,14 @@ function renderHome(){
   return `
 <div class="home-page">
   <section class="home-hero">
+    <img src="images/vistas_logo_2.png" height='150px' width='600px'>
     <div class="corner-logo">
       <img src="images/mh-cockpit-logo.webp" alt="Logo">
     </div>
-    <div class="hero-logo">
-      // Current:
-<span class="hero-logo-text"><img src="images/vistas_logo_2.png" height='200px' width='700px'></span>
-    <h1 class="hero-headline">Knowledge is power.</h1>
+<div class="hero-logo">
+  <span class="hero-logo-text">
+  </span>
+</div>
     <p class="hero-sub">"One Campus. Different Stories. Infinite Possibilities."</p>
     <div class="home-login-cards">
       <button class="login-card" data-action="goto-staff-login">
