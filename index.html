@@ -154,8 +154,8 @@ p.page-sub{color:var(--muted);font-size:13px;margin:0 0 18px;}
 .btn-primary:hover{background:#262c36;}
 .btn-signal{background:var(--signal);color:#fff;}
 .btn-signal:hover{background:#178a66;}
-.btn-ghost{background:none;border:1px solid var(--line);color:var(--ink);}
-.btn-ghost:hover{background:var(--paper);}
+.btn-ghost{background:none;border:1px solid var(--line);color:#ffffff}
+.btn-ghost:hover{background:#000000}
 .btn-danger{background:none;border:1px solid #f0c6c2;color:var(--alert);}
 .btn-danger:hover{background:var(--alert-dim);}
 .btn-block{width:100%;}
@@ -306,19 +306,38 @@ td.mono,th.mono{font-family:var(--font-mono);}
    ============================================================ */
 .auth-page{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
 .auth-card{
-  width:100%;max-width:400px;background:var(--surface);
+  width:100%;max-width:400px;background:#05193e;
   border:1px solid var(--line);border-radius:20px;padding:32px 28px;
 }
 .auth-back{margin-bottom:20px;}
 .auth-logo{display:flex;align-items:center;gap:8px;margin-bottom:24px;}
 .auth-logo svg{width:24px;height:24px;}
 .auth-logo strong{font-family:var(--font-display);font-size:16px;}
-.auth-title{font-family:var(--font-display);font-size:22px;font-weight:700;margin:0 0 4px;letter-spacing:-0.01em;}
-.auth-sub{font-size:13px;color:var(--muted);margin:0 0 24px;}
+.auth-title{font-family:var(--font-display);font-size:22px;font-weight:700;margin:0 0 4px;letter-spacing:-0.01em;colour: white;}
+.auth-sub{font-size:13px;color:#c6dbcb;margin:0 0 24px;}
 .auth-divider{height:1px;background:var(--line);margin:20px 0;}
-.auth-switch{font-size:13px;color:var(--muted);text-align:center;}
+.auth-switch{font-size:13px;color:#ffffff;text-align:center;}
 .auth-switch button{background:none;border:none;color:var(--signal);font-weight:600;cursor:pointer;padding:0;}
+.auth-card{text-align: center;}
 
+.login-logos{
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px; /* Space between logos */
+    margin-bottom: 20px;
+}
+
+.login-logo{
+    width: 60px;
+    height: 60px;
+    object-fit: contain;
+}
+
+.auth-card h3{
+    color: white;
+    text-align: center;
+}
 /* ============================================================
    ROLE SELECT (intermediate)
    ============================================================ */
@@ -1102,7 +1121,10 @@ function renderStaffLogin(){
     <div class="auth-back">
       <button class="btn btn-ghost btn-sm" data-action="goto-home">← Back to home</button>
     </div>
-    <div class="auth-logo"><img src="images/vistas_logo_2.png" style="height:24px;"><strong>VELS UNIVERSITY Staff</strong></div>    <h1 class="auth-title">${isReg?'Create staff account':'Staff sign in'}</h1>
+    <div class="login-logos">
+    <img src="images/vistas_logo_2.png" class="login-logo">
+    <img src="images/mh-cockpit-logo.webp" class="login-logo"></div>
+    <h3>Staff Sign In</h3>
     <p class="auth-sub">${isReg?'Use your institutional staff email.':'Sign in with your staff email and password.'}</p>
     <form data-form="staff-auth" class="stack">
       <div class="field">
@@ -1134,8 +1156,10 @@ function renderStudentLogin(){
     <div class="auth-back">
       <button class="btn btn-ghost btn-sm" data-action="goto-home">← Back to home</button>
     </div>
-    <div class="auth-logo">${I.user}<strong>VELS UNIVERSITY Student</strong></div>
-    <h1 class="auth-title">Student sign in</h1>
+    <div class="login-logos">
+    <img src="images/vistas_logo_2.png" class="login-logo">
+    <img src="images/mh-cockpit-logo.webp" class="login-logo"></div>
+    <h3>Student Sign In</h3>
     <p class="auth-sub">Use your roll number and the password given by your staff.</p>
     <form data-form="student-auth" class="stack">
       <div class="field">
