@@ -56,18 +56,101 @@ input,select{font-family:inherit;}
    TOP BAR
    ============================================================ */
 .topbar{
-  position:sticky;top:0;z-index:30;
-  display:flex;align-items:center;justify-content:space-between;
-  padding:14px 18px;
-  background:#0f0950;
-  border-bottom:1px solid var(--line);
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:14px 20px;
+    background:#fff;
+    border-bottom:1px solid #e5e7eb;
+    position:sticky;
+    top:0;
+    z-index:100;
 }
-.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;}
-.brand-mark{width:30px;height:30px;flex-shrink:0;}
-.brand-text{display:flex;flex-direction:column;line-height:1.1;}
-.brand-text strong{font-family:var(--font-display);font-size:18px;font-weight:700;letter-spacing:-0.01em;}
-.brand-text span{font-size:11px;color:var(--muted);}
-.identity{display:flex;align-items:center;gap:10px;}
+
+.brand{
+    display:flex;
+    align-items:center;
+    gap:12px;
+}
+
+.top-logo{
+    width:150px;
+    height:auto;
+    object-fit:contain;
+}
+
+.brand-text{
+    display:flex;
+    flex-direction:column;
+}
+
+.brand-text span{
+    font-size:14px;
+    color:#666;
+}
+
+.identity{
+    display:flex;
+    align-items:center;
+    gap:10px;
+}
+
+.avatar{
+    width:40px;
+    height:40px;
+    border-radius:50%;
+    background:#2563eb;
+    color:white;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-weight:700;
+}
+
+.user-info{
+    display:flex;
+    flex-direction:column;
+}
+
+.user-info strong{
+    font-size:14px;
+}
+
+.user-info small{
+    color:#666;
+}
+
+/* MOBILE */
+
+@media (max-width:768px){
+
+    .topbar{
+        flex-direction:column;
+        gap:12px;
+        padding:12px;
+    }
+
+    .brand{
+        width:100%;
+        justify-content:center;
+    }
+
+    .top-logo{
+        width:110px;
+    }
+
+    .brand-text{
+        display:none;
+    }
+
+    .identity{
+        width:100%;
+        justify-content:center;
+    }
+
+}
+
+
 .role-pill{
   font-family:var(--font-mono);font-size:12px;padding:5px 10px;border-radius:20px;
   background:var(--signal-dim);color:var(--signal-dark);border:1px solid #cfe9df;
@@ -509,6 +592,18 @@ pre.rules-block{
     max-width: 700px;
     height: auto;
     display: block;
+}
+
+.top-logo{
+    width:150px;
+    height:auto;
+    object-fit:contain;
+}
+
+@media(max-width:768px){
+    .top-logo{
+        width:100px;
+    }
 }
 </style>
 </head>
@@ -1206,16 +1301,26 @@ function topbar(){
   const identity=S.isStaff
     ?`<span class="role-pill">Staff</span>`
     :`<span class="role-pill mono">${esc(S.currentStudentData?.rollNo||'')}</span>`;
-  return `<div class="topbar">
-    <div class="brand"><img src="images/vistas_logo_2.png" style="width:150px;height:50px;object-fit:contain;">
-      <div class="brand-text"><strong></strong><span>${S.isStaff?S.authUser?.email||'Staff':'Lab attendance'}</span></div>
+  return <header class="topbar">
+
+    <div class="brand">
+        <img src="images/vistas_logo_2.png" class="top-logo" alt="VELS Logo">
+
+        <div class="brand-text">
+            <span>Student Portal</span>
+        </div>
     </div>
+
     <div class="identity">
-      ${identity}
-      <button class="icon-btn" data-action="logout" title="Log out">${I.logout}</button>
+        <div class="avatar">S</div>
+
+        <div class="user-info">
+            <strong>Student</strong>
+            <small>Welcome Back</small>
+        </div>
     </div>
-  </div>`;
-}
+
+</header>
 function staffNav(){
   const items=[{tab:'students',label:'Students',icon:I.users},{tab:'sessions',label:'Sessions',icon:I.qr},{tab:'reports',label:'Reports',icon:I.chart}];
   return `<nav class="nav">${items.map(i=>`<button data-action="staff-tab" data-tab="${i.tab}" class="${S.staffTab===i.tab?'active':''}">${i.icon}<span>${i.label}</span></button>`).join('')}</nav>`;
