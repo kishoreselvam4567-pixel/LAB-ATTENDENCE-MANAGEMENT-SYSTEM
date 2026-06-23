@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>VELS UNIVERSITY — Lab Attendance</title>
+<title>Vels University — Lab Attendance</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
@@ -83,6 +83,14 @@ input,select{font-family:inherit;}
 }
 .brand-text strong{
     color: white;
+}
+
+.vels-logo{
+    width:90%;
+    max-width:600px;
+    height:auto;
+    display:block;
+    margin:0 auto;
 }
 /* ============================================================
    LAYOUT SHELL
@@ -304,7 +312,7 @@ td.mono,th.mono{font-family:var(--font-mono);}
 /* ============================================================
    AUTH (LOGIN / REGISTER) PAGES
    ============================================================ */
-.auth-page{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+.auth-page{background-color: #57473b; min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
 .auth-card{
   width:100%;max-width:400px;background:#05193e;
   border:1px solid var(--line);border-radius:20px;padding:32px 28px;
@@ -476,7 +484,18 @@ pre.rules-block{
     height: auto;
     border-radius: 12px;
 }
+@media (max-width:768px){
 
+  .corner-logo{
+      top:10px;
+      left:10px;
+  }
+
+  .corner-logo img{
+      width:45px;
+  }
+
+}
 
 .hero-logo {
     display: flex;
@@ -1078,16 +1097,17 @@ function renderConfigNotice(){
 function renderHome(){
   return `
 <div class="home-page">
-  <section class="home-hero">
-    <img src="images/vistas_logo_2.png" height='150px' width='600px'>
+<section class="home-hero">
+
     <div class="corner-logo">
-      <img src="images/mh-cockpit-logo.webp" alt="Logo">
+        <img src="images/mh-cockpit-logo.webp" alt="Logo">
     </div>
-<div class="hero-logo">
-  <span class="hero-logo-text">
-  </span>
-</div>
-    <p class="hero-sub">"One Campus. Different Stories. Infinite Possibilities."</p>
+
+    <img src="images/vistas_logo_2.png" class="vels-logo" alt="VELS">
+
+    <p class="hero-sub">
+        "One Campus. Different Stories. Infinite Possibilities."
+    </p>
     <div class="home-login-cards">
       <button class="login-card" data-action="goto-staff-login">
         <div class="login-card-icon">${I.cap}</div>
