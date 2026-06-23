@@ -530,6 +530,10 @@ pre.rules-block{
   const STAFF_EMAIL_DOMAIN = "@staff.labtrack.edu";   /* change to your domain */
   const EXTRA_STAFF_EMAILS = ['kishoreselvam4567@gmail.com'];  /* ["teacher@gmail.com", ...]              */
 
+  /* -------- DEAN EMAIL — only this account can create new staff logins -------- */
+  /* Change this to the Dean's actual email address. */
+  const DEAN_EMAIL = 'kishoreselvam4567@gmail.com'; /* e.g. 'dean@college.edu' */
+
   /* -------- ③ QR SECRET — shared secret for signing QR tokens -------- */
   /* Change this to any random string (at least 32 chars recommended).
      This is used to sign QR tokens so students can't forge them.
@@ -634,8 +638,38 @@ function fmtDuration(ms){
 }
 function isStaffEmail(email){
   if(!email) return false;
-  if(EXTRA_STAFF_EMAILS.includes(email)) return true;
-  return email.endsWith(STAFF_EMAIL_DOMAIN);
+  const lower=email.toLowerCase().trim();
+  if(EXTRA_STAFF_EMAILS.map(e=>e.toLowerCase().trim()).includes(lower)) return true;
+  return lower.endsWith(STAFF_EMAIL_DOMAIN.toLowerCase());
+}
+function isDean(email){
+  return email && email.toLowerCase()===DEAN_EMAIL.toLowerCase();
+}
+
+async function createStaffByDean(email,password){
+  if(!isDean(S.authUser?.email)){ flash('error','Only the Dean can create staff accounts.'); return; }
+  S.authLoading=true; render();
+  try{
+    let secondaryApp;
+    try{ secondaryApp=firebase.app('labtrack-staff-reg'); }
+    catch{ secondaryApp=firebase.initializeApp(firebaseConfig,'labtrack-staff-reg'); }
+    const secondaryAuth=firebase.auth(secondaryApp);
+    await secondaryAuth.createUserWithEmailAndPassword(email,password);
+    await secondaryAuth.signOut();
+    // Save email to Firebase so isStaffEmail() recognises it at login
+    const safeKey=email.replace(/[.#$\[\]]/g,'_');
+    await dbRef('staffEmails/'+safeKey).set({email,createdAt:new Date().toISOString(),createdBy:S.authUser.email});
+    // Also update runtime list so it works immediately without reload
+    if(!EXTRA_STAFF_EMAILS.includes(email)) EXTRA_STAFF_EMAILS.push(email);
+    flash('success',`Staff account created for ${email}. Share their password with them.`);
+  }catch(e){
+    if(e.code==='auth/email-already-in-use'){
+      flash('warn',`An account for ${email} already exists in Firebase. They can log in with their existing password.`);
+    } else {
+      flash('error',friendlyAuthError(e.code)||e.message);
+    }
+  }
+  S.authLoading=false; render();
 }
 
 function flash(type,text){
@@ -689,14 +723,20 @@ async function verifyQrToken(token){
 function dbRef(path){ return db.ref('labtrack/'+path); }
 
 async function loadAll(){
-  const[studSnap,sessSnap,attSnap]=await Promise.all([
+  const[studSnap,sessSnap,attSnap,staffEmailsSnap]=await Promise.all([
     dbRef('students').once('value'),
     dbRef('sessions').once('value'),
     dbRef('attendance').once('value'),
+    dbRef('staffEmails').once('value'),
   ]);
   S.students   = studSnap.val()||{};
   S.sessions   = sessSnap.val()||{};
   S.attendance = attSnap.val()||{};
+  // Merge DB-stored staff emails into runtime list
+  const dbStaffEmails=staffEmailsSnap.val()||{};
+  Object.values(dbStaffEmails).forEach(r=>{
+    if(r.email&&!EXTRA_STAFF_EMAILS.includes(r.email)) EXTRA_STAFF_EMAILS.push(r.email);
+  });
 }
 
 function watchAttendance(sessionId){
@@ -741,6 +781,7 @@ async function markAttendance(sessionId,rollNo,name){
    AUTH
    ============================================================ */
 async function staffLogin(email,password){
+  email=email.toLowerCase().trim();
   S.authLoading=true;S.authError='';render();
   try{
     const cred=await auth.signInWithEmailAndPassword(email,password);
@@ -1103,7 +1144,6 @@ function renderHome(){
    RENDER: AUTH PAGES
    ============================================================ */
 function renderStaffLogin(){
-  const isReg=S.staffRegMode;
   return `
 <div class="auth-page">
   <div class="auth-card">
@@ -1114,7 +1154,7 @@ function renderStaffLogin(){
     <img src="images/vistas_logo_2.png" class="login-logo">
     <img src="images/mh-cockpit-logo.webp" class="login-logo"></div>
     <h3>Staff Sign In</h3>
-    <p class="auth-sub">${isReg?'Use your institutional staff email.':'Sign in with your staff email and password.'}</p>
+    <p class="auth-sub">Sign in with your staff email and password.</p>
     <form data-form="staff-auth" class="stack">
       <div class="field">
         <label>Email</label>
@@ -1122,17 +1162,16 @@ function renderStaffLogin(){
       </div>
       <div class="field">
         <label>Password</label>
-        <input name="password" type="password" autocomplete="current-password" required placeholder="${isReg?'Min. 6 characters':'Your password'}">
+        <input name="password" type="password" autocomplete="current-password" required placeholder="Your password">
       </div>
       ${S.authError?`<p style="color:var(--alert);font-size:13px;margin:0;">${esc(S.authError)}</p>`:''}
       <button class="btn btn-primary btn-block" type="submit" ${S.authLoading?'disabled':''}>
-        ${S.authLoading?'<span style="opacity:.6">Signing in…</span>':isReg?'Create account':'Sign in'}
+        ${S.authLoading?'<span style="opacity:.6">Signing in…</span>':'Sign in'}
       </button>
     </form>
     <div class="auth-divider"></div>
-    <p class="auth-switch">
-      ${isReg?'Already have a staff account?':'First time?'}
-      <button data-action="toggle-staff-reg">${isReg?'Sign in':'Create account'}</button>
+    <p class="auth-switch" style="font-size:12px;color:var(--muted);text-align:center;">
+      Staff accounts are created by the Dean only.<br>Contact your Dean if you need access.
     </p>
   </div>
 </div>`;
@@ -1188,7 +1227,8 @@ function topbar(){
 }
 function staffNav(){
   const items=[{tab:'students',label:'Students',icon:I.users},{tab:'sessions',label:'Sessions',icon:I.qr},{tab:'reports',label:'Reports',icon:I.chart}];
-  return `<nav class="nav">${items.map(i=>`<button data-action="staff-tab" data-tab="${i.tab}" class="${S.staffTab===i.tab?'active':''}">${i.icon}<span>${i.label}</span></button>`).join('')}</nav>`;
+  const deanItem = isDean(S.authUser?.email) ? [{tab:'staff-accounts',label:'Staff Accounts',icon:I.shield}] : [];
+  return `<nav class="nav">${[...items,...deanItem].map(i=>`<button data-action="staff-tab" data-tab="${i.tab}" class="${S.staffTab===i.tab?'active':''}">${i.icon}<span>${i.label}</span></button>`).join('')}</nav>`;
 }
 function studentNav(){
   const items=[{tab:'scan',label:'Scan QR',icon:I.qr},{tab:'history',label:'History',icon:I.history},{tab:'profile',label:'Profile',icon:I.user}];
@@ -1609,6 +1649,43 @@ function renderScanResult(){
 }
 
 /* ============================================================
+   RENDER: STAFF ACCOUNTS (Dean only)
+   ============================================================ */
+function renderStaffAccounts(){
+  if(!isDean(S.authUser?.email)){
+    return `<div class="empty"><div class="glyph">${I.shield}</div><p>Access denied. Only the Dean can manage staff accounts.</p></div>`;
+  }
+  const err=S.modal?.error?`<p style="color:var(--alert);font-size:13px;margin:0 0 8px;">${esc(S.modal.error)}</p>`:'';
+  return `
+<h1 class="page-title">Staff Accounts</h1>
+<p class="page-sub">Create login credentials for lab staff. Only you (the Dean) can do this.</p>
+<div class="card" style="max-width:420px;">
+  <h2 style="font-family:var(--font-display);font-size:17px;margin:0 0 14px;">Create New Staff Account</h2>
+  <form data-form="create-staff" class="stack">
+    <div class="field">
+      <label>Staff Email</label>
+      <input name="staffEmail" type="email" required placeholder="e.g. staff@gmail.com" autocomplete="off">
+      <p class="help">Any email address works — Gmail, college email, etc.</p>
+    </div>
+    <div class="field">
+      <label>Temporary Password</label>
+      <input name="staffPassword" type="password" required placeholder="Min. 6 characters" autocomplete="new-password">
+      <p class="help">Share this with the staff member. They cannot change it themselves.</p>
+    </div>
+    ${err}
+    <button class="btn btn-signal btn-block" type="submit" ${S.authLoading?'disabled':''}>
+      ${S.authLoading?'<span style="opacity:.6">Creating…</span>':'Create Staff Account'}
+    </button>
+  </form>
+</div>
+<div class="card" style="margin-top:14px;max-width:420px;background:var(--warn-dim);border-color:#e8c97a;">
+  <p style="font-size:13px;margin:0;color:#7a5a10;line-height:1.6;">
+    <strong>Note:</strong> Any email can be used for staff accounts. Once created here, the email is saved to the database and the staff member can log in immediately via the Staff Portal.
+  </p>
+</div>`;
+}
+
+/* ============================================================
    MAIN RENDER
    ============================================================ */
 function render(){
@@ -1627,6 +1704,7 @@ function render(){
     let body='';
     if(S.staffTab==='students') body=renderStaffStudents();
     else if(S.staffTab==='sessions') body=renderStaffSessions();
+    else if(S.staffTab==='staff-accounts') body=renderStaffAccounts();
     else body=renderStaffReports();
     html=`${topbar()}<div class="shell">${staffNav()}<div class="content">${body}</div></div>${renderModal()}${renderQrView()}`;
   }
@@ -1684,8 +1762,14 @@ document.addEventListener('submit',async e=>{
 
   if(form.dataset.form==='staff-auth'){
     const email=get('email'),password=get('password');
-    if(S.staffRegMode) await staffRegister(email,password);
-    else await staffLogin(email,password);
+    await staffLogin(email,password);
+  }
+
+  else if(form.dataset.form==='create-staff'){
+    if(!isDean(S.authUser?.email)){ flash('error','Only the Dean can create staff accounts.'); return; }
+    const email=get('staffEmail'),password=get('staffPassword');
+    if(!email||!password){ flash('error','Email and password are required.'); return; }
+    await createStaffByDean(email,password);
   }
 
   else if(form.dataset.form==='student-auth'){
@@ -1743,7 +1827,7 @@ async function handleAction(action,el){
     case 'goto-home':       S.view='home';S.authError='';render();break;
     case 'goto-staff-login':S.view='staffLogin';S.authError='';render();break;
     case 'goto-student-login':S.view='studentLogin';S.authError='';render();break;
-    case 'toggle-staff-reg':S.staffRegMode=!S.staffRegMode;S.authError='';render();break;
+    case 'toggle-staff-reg':/* disabled — staff accounts created by Dean only */break;
     case 'logout':          await doLogout();break;
 
     case 'staff-tab':  S.staffTab=el.dataset.tab;S.modal=null;render();break;
@@ -1848,32 +1932,43 @@ async function handleAction(action,el){
     S.authUser=user;
 
     if(isStaffEmail(user.email)){
+      // ── STAFF LOGIN ──
       S.isStaff=true;
       try{
         await loadAll();
-        S.view='staffApp';
       }catch(e){
         console.error('Failed to load data',e);
-        flash('error','Failed to load data. Check Firebase Realtime Database URL and security rules.');
-        S.view='staffApp';
+        flash('error','Signed in but could not load records. Check Firebase Realtime Database URL and security rules.');
       }
+      S.view='staffApp';
       render();
     }else{
+      // ── STUDENT LOGIN ──
       S.isStaff=false;
       try{
         await loadAll();
+        // Try match by Firebase UID first (primary key used when student was added)
         const stu=S.students[user.uid];
         if(stu){
           S.currentStudentData=stu;
           S.view='studentApp';
         }else{
+          // Fallback: match by stored firebaseEmail (handles legacy records)
           const match=Object.values(S.students).find(s=>s.firebaseEmail===user.email);
-          if(match){ S.currentStudentData=match; S.view='studentApp'; }
-          else{ flash('error','Your account is not linked to any student record. Contact staff.'); await auth.signOut(); }
+          if(match){
+            S.currentStudentData=match;
+            S.view='studentApp';
+          }else{
+            // Not found — this email is not a student AND not a staff email → sign out
+            flash('error','This account is not linked to any student record. Please contact your lab staff.');
+            await auth.signOut();
+            S.view='home';
+          }
         }
       }catch(e){
         console.error('load failed',e);
-        flash('error','Could not load your records. Check your connection.');
+        flash('error','Could not load your student records. Check your internet connection and try again.');
+        S.view='home';
       }
       render();
     }
