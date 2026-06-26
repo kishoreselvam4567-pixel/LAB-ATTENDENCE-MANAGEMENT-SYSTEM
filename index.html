@@ -167,11 +167,11 @@ p.page-sub{color:var(--muted);font-size:13px;margin:0 0 18px;}
 .btn-signal:hover{background:#178a66;}
 .btn-ghost{background:none;border:1px solid var(--line);color:var(--ink);}
 .btn-ghost:hover{background:var(--surface2);color:var(--ink);}
-.auth-back .btn-ghost:hover{background:rgba(255,255,255,0.15);color:#ffffff;filter:brightness(1.3);}
-.home-hero .btn-ghost,.scan-bottom .btn-ghost{color:#fff;border-color:rgba(255,255,255,.3);}
-.home-hero .btn-ghost:hover,.scan-bottom .btn-ghost:hover{background:rgba(255,255,255,.1);}
+.auth-back .btn-ghost:hover{background:rgb(90, 91, 91);color:#ffffff;filter:brightness(1.3);}
+.home-hero .btn-ghost,.scan-bottom .btn-ghost{color:#fff;border-color:rgba(255, 255, 255, 0.815);}
+.home-hero .btn-ghost:hover,.scan-bottom .btn-ghost:hover{background:rgba(255, 255, 255, 0.907);}
 /* ghost on dark topbar/session cards that appear on --ink bg */
-.topbar .btn-ghost{color:rgba(255,255,255,.8);border-color:rgba(255,255,255,.2);}
+.topbar .btn-ghost{color:rgba(255,255,255,.8);border-color:rgba(234, 234, 234, 0.833);}
 .topbar .btn-ghost:hover{background:rgba(255,255,255,.1);}
 .btn-danger{background:none;border:1px solid #f0c6c2;color:var(--alert);}
 .btn-danger:hover{background:var(--alert-dim);}
@@ -1294,8 +1294,7 @@ function renderStudentLogin(){
 <div class="auth-page">
   <div class="auth-card">
     <div class="auth-back">
-      <button class="btn btn-ghost btn-sm" data-action="goto-home">← Back to home</button>
-    </div>
+<button class="btn btn-ghost btn-sm" style="color:#fff;border-color:rgba(255,255,255,0.3);" data-action="goto-home">← Back to home</button>    </div>
     <div class="login-logos">
     <img src="images/vistas_logo_2.png" class="login-logo">
     <img src="images/mh-cockpit-logo.webp" class="login-logo"></div>
