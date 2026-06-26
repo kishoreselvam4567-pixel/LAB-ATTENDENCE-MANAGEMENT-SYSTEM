@@ -166,8 +166,8 @@ p.page-sub{color:var(--muted);font-size:13px;margin:0 0 18px;}
 .btn-signal{background:var(--signal);color:#fff;}
 .btn-signal:hover{background:#178a66;}
 .btn-ghost{background:none;border:1px solid var(--line);color:var(--ink);}
-.btn-ghost:hover{background:var(--surface2);}
-/* ghost inside dark hero/scan overlays */
+.btn-ghost:hover{background:var(--surface2);color:var(--ink);}
+.auth-back .btn-ghost:hover{background:rgba(255,255,255,0.15);color:#ffffff;filter:brightness(1.3);}
 .home-hero .btn-ghost,.scan-bottom .btn-ghost{color:#fff;border-color:rgba(255,255,255,.3);}
 .home-hero .btn-ghost:hover,.scan-bottom .btn-ghost:hover{background:rgba(255,255,255,.1);}
 /* ghost on dark topbar/session cards that appear on --ink bg */
@@ -588,11 +588,12 @@ let S = {
   authUser: null,          // Firebase user
   isStaff: false,
   currentStudentData: null,// { uid, rollNo, name, dept, year, email }
-  staffTab: 'students',    // students | sessions | reports
+  staffTab: 'students',    // students | sessions | reports | staff-accounts
   studentTab: 'scan',      // scan | history | profile
   students: {},            // { uid: {rollNo,name,...} }
   sessions: {},            // { id: {subject,date,startTime,endTime,...} }
   attendance: {},          // { sessionId: { rollNo: {time,...} } }
+  staffAccounts: {},       // { safeKey: {email, createdAt, createdBy} }
   studentSearch: '',
   modal: null,             // {type, payload}
   qrSession: null,
@@ -658,15 +659,124 @@ async function createStaffByDean(email,password){
     await secondaryAuth.signOut();
     // Save email to Firebase so isStaffEmail() recognises it at login
     const safeKey=email.replace(/[.#$\[\]]/g,'_');
-    await dbRef('staffEmails/'+safeKey).set({email,createdAt:new Date().toISOString(),createdBy:S.authUser.email});
+    const record={email,createdAt:new Date().toISOString(),createdBy:S.authUser.email};
+    await dbRef('staffEmails/'+safeKey).set(record);
     // Also update runtime list so it works immediately without reload
     if(!EXTRA_STAFF_EMAILS.includes(email)) EXTRA_STAFF_EMAILS.push(email);
+    S.staffAccounts[safeKey]=record;
     flash('success',`Staff account created for ${email}. Share their password with them.`);
   }catch(e){
     if(e.code==='auth/email-already-in-use'){
       flash('warn',`An account for ${email} already exists in Firebase. They can log in with their existing password.`);
     } else {
       flash('error',friendlyAuthError(e.code)||e.message);
+    }
+  }
+  S.authLoading=false; render();
+}
+
+async function deleteStaffAccount(safeKey){
+  if(!isDean(S.authUser?.email)){ flash('error','Only the Dean can delete staff accounts.'); return; }
+  try{
+    await dbRef('staffEmails/'+safeKey).remove();
+    const record=S.staffAccounts[safeKey];
+    if(record){
+      const idx=EXTRA_STAFF_EMAILS.indexOf(record.email);
+      if(idx>-1) EXTRA_STAFF_EMAILS.splice(idx,1);
+    }
+    delete S.staffAccounts[safeKey];
+    flash('success','Staff account removed. They can no longer log in.');
+    render();
+  }catch(e){ flash('error','Failed to delete staff account: '+e.message); }
+}
+
+async function changeStaffPassword(email,newPassword){
+  if(!isDean(S.authUser?.email)){ flash('error','Only the Dean can change staff passwords.'); return; }
+  S.authLoading=true; render();
+  try{
+    let secondaryApp;
+    try{ secondaryApp=firebase.app('labtrack-staff-reg'); }
+    catch{ secondaryApp=firebase.initializeApp(firebaseConfig,'labtrack-staff-reg'); }
+    const secondaryAuth=firebase.auth(secondaryApp);
+    // We need to sign in as that user to change password — this requires knowing current password
+    // Instead we use Firebase Admin approach: sign in with current temp password stored by dean
+    // Since client SDK can't reset arbitrary user passwords, we inform dean to use Firebase console
+    // OR: We delete + recreate the account with a new password
+    flash('warn','To change a staff password, use the Firebase Console → Authentication → find the user → Reset password. Or delete and re-create their account here.');
+  }catch(e){ flash('error',e.message); }
+  S.authLoading=false; render();
+}
+
+async function changeStudentPasswordByStaff(uid, newPassword){
+  if(!S.isStaff){ flash('error','Only staff can change student passwords.'); return; }
+  const stu=S.students[uid];
+  if(!stu){ flash('error','Student not found.'); return; }
+  S.authLoading=true; render();
+  try{
+    const fEmail=`${stu.rollNo.toLowerCase().replace(/[^a-z0-9]/g,'_')}@labtrack-students.local`;
+    let secondaryApp;
+    try{ secondaryApp=firebase.app('labtrack-secondary'); }
+    catch{ secondaryApp=firebase.initializeApp(firebaseConfig,'labtrack-secondary'); }
+    const secondaryAuth=firebase.auth(secondaryApp);
+    // Sign in with the old password is not possible without knowing it.
+    // Use createUserWithEmailAndPassword to check — if account exists, we can't update without current PW.
+    // Best approach: delete the Firebase Auth user and recreate with new password, keeping DB record intact.
+    // Since we don't have Admin SDK, we sign in as student with a known password first.
+    // Workaround: use updatePassword via re-auth by prompting current password, 
+    // OR: re-create the account (delete old firebase auth user + create new one with same uid is not possible client-side).
+    // PRACTICAL SOLUTION: We store a "staffSetPassword" flow:
+    // 1. Delete Firebase Auth user (not possible without admin)
+    // 2. Create new Firebase Auth user with same email + new password
+    // This changes the UID, so we update the DB record.
+    try{
+      // Try creating — if email already in use, we need to sign in first and update
+      const cred=await secondaryAuth.createUserWithEmailAndPassword(fEmail, newPassword);
+      // If we got here, the old auth was deleted somehow — save new uid
+      const newUid=cred.user.uid;
+      await secondaryAuth.signOut();
+      if(newUid!==uid){
+        // Move the DB record to new UID
+        await dbRef(`students/${newUid}`).set(stu);
+        await dbRef(`students/${uid}`).remove();
+        S.students[newUid]=stu;
+        delete S.students[uid];
+      }
+      flash('success',`Password updated for ${stu.name} (${stu.rollNo}).`);
+    }catch(e2){
+      if(e2.code==='auth/email-already-in-use'){
+        // Account exists — sign in and update password
+        // We can't do this without the current password on the client.
+        // Show modal asking for current password to re-auth and then update
+        await secondaryAuth.signOut();
+        S.authLoading=false;
+        S.modal={type:'changeStudentPwReauth',uid,newPassword,studentName:stu.name,rollNo:stu.rollNo,fEmail};
+        render(); return;
+      }else{
+        throw e2;
+      }
+    }
+  }catch(e){ flash('error','Failed to update password: '+e.message); }
+  S.authLoading=false; render();
+}
+
+async function changeStudentPasswordReauth(uid, fEmail, currentPassword, newPassword){
+  S.authLoading=true; render();
+  try{
+    let secondaryApp;
+    try{ secondaryApp=firebase.app('labtrack-secondary'); }
+    catch{ secondaryApp=firebase.initializeApp(firebaseConfig,'labtrack-secondary'); }
+    const secondaryAuth=firebase.auth(secondaryApp);
+    const cred=await secondaryAuth.signInWithEmailAndPassword(fEmail, currentPassword);
+    await cred.user.updatePassword(newPassword);
+    await secondaryAuth.signOut();
+    const stu=S.students[uid];
+    flash('success',`Password updated for ${stu?.name||'student'}.`);
+    S.modal=null;
+  }catch(e){
+    if(e.code==='auth/wrong-password'||e.code==='auth/invalid-credential'){
+      S.modal={...S.modal, error:'Current password is incorrect.'};
+    }else{
+      S.modal={...S.modal, error:e.message};
     }
   }
   S.authLoading=false; render();
@@ -734,6 +844,7 @@ async function loadAll(){
   S.attendance = attSnap.val()||{};
   // Merge DB-stored staff emails into runtime list
   const dbStaffEmails=staffEmailsSnap.val()||{};
+  S.staffAccounts = dbStaffEmails;
   Object.values(dbStaffEmails).forEach(r=>{
     if(r.email&&!EXTRA_STAFF_EMAILS.includes(r.email)) EXTRA_STAFF_EMAILS.push(r.email);
   });
@@ -850,6 +961,7 @@ async function doLogout(){
   await auth.signOut();
   S={...S,view:'home',authUser:null,isStaff:false,currentStudentData:null,
      staffTab:'students',studentTab:'scan',students:{},sessions:{},attendance:{},
+     staffAccounts:{},
      studentSearch:'',modal:null,qrSession:null,scanning:false,scanResult:null,
      reportMode:'session',reportSessionId:null,reportStudentUid:null,authLoading:false,authError:''};
   render();
@@ -1148,7 +1260,7 @@ function renderStaffLogin(){
 <div class="auth-page">
   <div class="auth-card">
     <div class="auth-back">
-      <button class="btn btn-ghost btn-sm" data-action="goto-home">← Back to home</button>
+      <button class="btn btn-ghost btn-sm" style="color:#fff;border-color:rgba(255,255,255,0.3);" data-action="goto-home">← Back to home</button>
     </div>
     <div class="login-logos">
     <img src="images/vistas_logo_2.png" class="login-logo">
@@ -1284,7 +1396,7 @@ ${list.map(s=>{
   <td><span class="mono" style="font-size:13px;${lowPct?'color:var(--alert);font-weight:600':''}">${attended}/${sessKeys.length} (${pct}%)</span></td>
   <td><div class="action-icons">
     <button class="icon-btn" title="Edit" data-action="open-edit-student" data-uid="${uid}">${I.edit}</button>
-    <button class="icon-btn btn-danger" style="border-color:#f0c6c2;color:var(--alert);" title="Delete" data-action="delete-student" data-uid="${uid}">${I.trash}</button>
+    <button class="icon-btn" style="color:#C8932B;" title="Change password" data-action="open-change-student-pw" data-uid="${uid}">${I.key}</button>    <button class="icon-btn btn-danger" style="border-color:#f0c6c2;color:var(--alert);" title="Delete" data-action="delete-student" data-uid="${uid}">${I.trash}</button>
   </div></td>
   </tr>`;}).join('')}
 </tbody></table></div>`}`;
@@ -1482,6 +1594,57 @@ function renderModal(){
     </div></div>`;
   }
 
+  if(m.type==='changeStaffPw'){
+    return `<div class="overlay" data-close-modal>
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-head"><h2>${I.key} Change Staff Password</h2><button class="icon-btn" data-action="close-modal">${I.close}</button></div>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 16px;">Account: <strong>${esc(m.email)}</strong></p>
+      <div class="card" style="background:var(--warn-dim);border-color:#e8c97a;margin-bottom:16px;padding:12px 14px;">
+        <p style="font-size:13px;margin:0;color:#7a5a10;line-height:1.5;">
+          Due to Firebase security, password changes require the staff member's current password. 
+          Alternatively, delete and re-create their account with a new password.
+        </p>
+      </div>
+      <form data-form="change-staff-pw" data-safekey="${esc(m.safeKey)}" data-email="${esc(m.email)}" class="stack">
+        <div class="field">
+          <label>Current Password</label>
+          <input name="currentPassword" type="password" required placeholder="Staff member's current password" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>New Password</label>
+          <input name="newPassword" type="password" required placeholder="Min. 6 characters" autocomplete="new-password">
+        </div>
+        ${m.error?`<p style="color:var(--alert);font-size:13px;margin:0;">${esc(m.error)}</p>`:''}
+        <button class="btn btn-signal btn-block" type="submit" ${S.authLoading?'disabled':''}>
+          ${S.authLoading?'<span style="opacity:.6">Updating…</span>':'Update Password'}
+        </button>
+      </form>
+    </div></div>`;
+  }
+
+  if(m.type==='changeStudentPw'){
+    const stu=S.students[m.uid];
+    return `<div class="overlay" data-close-modal>
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-head"><h2>${I.key} Change Student Password</h2><button class="icon-btn" data-action="close-modal">${I.close}</button></div>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 16px;">Student: <strong>${esc(stu?.name||'')}</strong> · <span class="mono">${esc(stu?.rollNo||'')}</span></p>
+      <form data-form="change-student-pw" data-uid="${esc(m.uid)}" class="stack">
+        <div class="field">
+          <label>Current Password <span style="font-weight:400;color:var(--muted);">(required for re-authentication)</span></label>
+          <input name="currentPassword" type="password" required placeholder="Student's current password" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>New Password</label>
+          <input name="newPassword" type="password" required placeholder="Min. 6 characters" autocomplete="new-password">
+        </div>
+        ${m.error?`<p style="color:var(--alert);font-size:13px;margin:0;">${esc(m.error)}</p>`:''}
+        <button class="btn btn-signal btn-block" type="submit" ${S.authLoading?'disabled':''}>
+          ${S.authLoading?'<span style="opacity:.6">Updating…</span>':'Update Password'}
+        </button>
+      </form>
+    </div></div>`;
+  }
+
   return '';
 }
 
@@ -1656,11 +1819,30 @@ function renderStaffAccounts(){
     return `<div class="empty"><div class="glyph">${I.shield}</div><p>Access denied. Only the Dean can manage staff accounts.</p></div>`;
   }
   const err=S.modal?.error?`<p style="color:var(--alert);font-size:13px;margin:0 0 8px;">${esc(S.modal.error)}</p>`:'';
+  const staffList=Object.entries(S.staffAccounts);
+
+  const listHtml=staffList.length===0
+    ?`<div class="empty" style="padding:24px 0;"><p style="margin:0;font-size:13px;color:var(--muted);">No staff accounts created yet.</p></div>`
+    :`<div class="table-wrap" style="margin-top:18px;"><table>
+  <thead><tr><th>Email</th><th class="mono">Created</th><th>By</th><th></th></tr></thead>
+  <tbody>
+  ${staffList.map(([safeKey,rec])=>`<tr>
+    <td><strong style="font-size:13px;">${esc(rec.email)}</strong></td>
+    <td class="mono" style="font-size:12px;white-space:nowrap;">${rec.createdAt?fmtTimestamp(rec.createdAt):'—'}</td>
+    <td style="font-size:12px;color:var(--muted);">${esc(rec.createdBy||'—')}</td>
+    <td><div class="action-icons">
+      <button class="icon-btn" title="Change password" data-action="open-change-staff-pw" data-safekey="${esc(safeKey)}" data-email="${esc(rec.email)}">${I.key}</button>
+      <button class="icon-btn btn-danger" style="border-color:#f0c6c2;color:var(--alert);" title="Delete account" data-action="delete-staff-account" data-safekey="${esc(safeKey)}" data-email="${esc(rec.email)}">${I.trash}</button>
+    </div></td>
+  </tr>`).join('')}
+  </tbody></table></div>`;
+
   return `
 <h1 class="page-title">Staff Accounts</h1>
-<p class="page-sub">Create login credentials for lab staff. Only you (the Dean) can do this.</p>
-<div class="card" style="max-width:420px;">
-  <h2 style="font-family:var(--font-display);font-size:17px;margin:0 0 14px;">Create New Staff Account</h2>
+<p class="page-sub">Create and manage login credentials for lab staff. Only you (the Dean) can do this.</p>
+
+<div class="card" style="max-width:460px;">
+  <h2 style="font-family:var(--font-display);font-size:17px;margin:0 0 14px;"> Create New Staff Account</h2>
   <form data-form="create-staff" class="stack">
     <div class="field">
       <label>Staff Email</label>
@@ -1670,7 +1852,7 @@ function renderStaffAccounts(){
     <div class="field">
       <label>Temporary Password</label>
       <input name="staffPassword" type="password" required placeholder="Min. 6 characters" autocomplete="new-password">
-      <p class="help">Share this with the staff member. They cannot change it themselves.</p>
+      <p class="help">Share this with the staff member.</p>
     </div>
     ${err}
     <button class="btn btn-signal btn-block" type="submit" ${S.authLoading?'disabled':''}>
@@ -1678,9 +1860,16 @@ function renderStaffAccounts(){
     </button>
   </form>
 </div>
-<div class="card" style="margin-top:14px;max-width:420px;background:var(--warn-dim);border-color:#e8c97a;">
+
+<div style="margin-top:24px;">
+  <h2 style="font-family:var(--font-display);font-size:17px;margin:0 0 4px;">Staff Accounts (${staffList.length})</h2>
+  <p style="font-size:13px;color:var(--muted);margin:0 0 4px;">Staff members who can log in to the portal.</p>
+  ${listHtml}
+</div>
+
+<div class="card" style="margin-top:14px;max-width:460px;background:var(--warn-dim);border-color:#e8c97a;">
   <p style="font-size:13px;margin:0;color:#7a5a10;line-height:1.6;">
-    <strong>Note:</strong> Any email can be used for staff accounts. Once created here, the email is saved to the database and the staff member can log in immediately via the Staff Portal.
+    <strong>Note:</strong> Deleting an account here removes their login access. Their session and attendance records are preserved. To reset a password, use the key icon next to the account.
   </p>
 </div>`;
 }
@@ -1817,6 +2006,64 @@ document.addEventListener('submit',async e=>{
       flash('success','Session created.'); S.modal=null; S.staffTab='sessions'; render();
     }catch{ flash('error','Failed to save session.'); }
   }
+
+  else if(form.dataset.form==='change-staff-pw'){
+    const safeKey=form.dataset.safekey;
+    const email=form.dataset.email;
+    const currentPassword=get('currentPassword');
+    const newPassword=get('newPassword');
+    if(!currentPassword||!newPassword){ flash('error','Both passwords are required.'); return; }
+    if(newPassword.length<6){ flash('error','New password must be at least 6 characters.'); return; }
+    S.authLoading=true; render();
+    try{
+      let secondaryApp;
+      try{ secondaryApp=firebase.app('labtrack-staff-reg'); }
+      catch{ secondaryApp=firebase.initializeApp(firebaseConfig,'labtrack-staff-reg'); }
+      const secondaryAuth=firebase.auth(secondaryApp);
+      const cred=await secondaryAuth.signInWithEmailAndPassword(email,currentPassword);
+      await cred.user.updatePassword(newPassword);
+      await secondaryAuth.signOut();
+      flash('success',`Password updated for ${email}.`);
+      S.modal=null;
+    }catch(e){
+      if(e.code==='auth/wrong-password'||e.code==='auth/invalid-credential'){
+        S.modal={...S.modal,error:'Current password is incorrect.'};
+      }else{
+        S.modal={...S.modal,error:e.message};
+      }
+    }
+    S.authLoading=false; render();
+  }
+
+  else if(form.dataset.form==='change-student-pw'){
+    const uid=form.dataset.uid;
+    const currentPassword=get('currentPassword');
+    const newPassword=get('newPassword');
+    if(!currentPassword||!newPassword){ flash('error','Both passwords are required.'); return; }
+    if(newPassword.length<6){ flash('error','New password must be at least 6 characters.'); return; }
+    const stu=S.students[uid];
+    if(!stu){ flash('error','Student not found.'); return; }
+    const fEmail=`${stu.rollNo.toLowerCase().replace(/[^a-z0-9]/g,'_')}@labtrack-students.local`;
+    S.authLoading=true; render();
+    try{
+      let secondaryApp;
+      try{ secondaryApp=firebase.app('labtrack-secondary'); }
+      catch{ secondaryApp=firebase.initializeApp(firebaseConfig,'labtrack-secondary'); }
+      const secondaryAuth=firebase.auth(secondaryApp);
+      const cred=await secondaryAuth.signInWithEmailAndPassword(fEmail,currentPassword);
+      await cred.user.updatePassword(newPassword);
+      await secondaryAuth.signOut();
+      flash('success',`Password updated for ${stu.name} (${stu.rollNo}).`);
+      S.modal=null;
+    }catch(e){
+      if(e.code==='auth/wrong-password'||e.code==='auth/invalid-credential'){
+        S.modal={...S.modal,error:'Current password is incorrect.'};
+      }else{
+        S.modal={...S.modal,error:e.message};
+      }
+    }
+    S.authLoading=false; render();
+  }
 });
 
 async function handleAction(action,el){
@@ -1848,6 +2095,25 @@ async function handleAction(action,el){
     case 'close-modal':S.modal=null;render();break;
 
     case 'open-new-session':S.modal={type:'newSession'};render();break;
+
+    case 'open-change-student-pw':{
+      S.modal={type:'changeStudentPw',uid};render();break;
+    }
+    case 'open-change-staff-pw':{
+      const safeKey=el.dataset.safekey;
+      const email=el.dataset.email;
+      S.modal={type:'changeStaffPw',safeKey,email};render();break;
+    }
+    case 'delete-staff-account':{
+      const safeKey=el.dataset.safekey;
+      const email=el.dataset.email;
+      if(email&&email.toLowerCase()===DEAN_EMAIL.toLowerCase()){
+        flash('error','Cannot delete the Dean account.');break;
+      }
+      if(confirm(`Remove staff access for ${email}? They will no longer be able to log in.`)){
+        await deleteStaffAccount(safeKey);
+      }break;
+    }
     case 'mark-attendance':S.modal={type:'markAttendance',sessionId:id};render();break;
 
     case 'toggle-attendance':{
